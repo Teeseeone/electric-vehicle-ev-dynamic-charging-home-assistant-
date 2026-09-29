@@ -1,17 +1,13 @@
 blueprint:
-  name: Dynamic EV Charging Automation v2.4
+  name: Dynamic EV Charging Automation v2.3
   description: >
-    **v2.4 - Separate ramp-up and ramp-down behavior**
-    - Added independent step sizes and delays for increasing and decreasing charging current
-    - Allows fast load shedding when household consumption rises
-    - Allows slower, gentler ramp-up when spare power becomes available
-    - Fixes the adjustment loop so a 0 A target stops charging without getting stuck trying to set the current below the configured minimum
-
-    **v2.3 - Added switch support for charging start/stop**
+    **v2.3 - Tesla switch support and separate ramp-up/ramp-down behavior**
     - EV Charging Toggle can now be either a select or switch entity
     - Switch entities use turn_on to start charging and turn_off to stop charging
-    - Keeps existing select entity behavior unchanged
     - Adds direct support for Tesla Fleet charging switches
+    - Added independent step sizes and delays for increasing and decreasing charging current
+    - Allows faster load shedding when household consumption rises and gentler ramp-up when spare power becomes available
+    - Fixes the adjustment loop so a 0 A target stops charging without getting stuck trying to set the current below the configured minimum
 
     **v2.2 - Optional location tracker**
     - The Car/Person Location Tracker is now optional
