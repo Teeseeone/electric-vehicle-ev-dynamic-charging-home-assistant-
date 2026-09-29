@@ -2,7 +2,7 @@ blueprint:
   name: Dynamic EV Charging Automation v2.4
   description: >
     **v2.4 - Supply presets, Tesla Fleet states, hysteresis and restart protection**
-    - Added single-phase 230 V, three-phase 230 V, three-phase 400 V and custom supply choices
+    - Added single-phase 230 V, three-phase 230 V and three-phase 400 V supply choices
     - Added Tesla Fleet charging states: starting, charging, stopped, complete, disconnected and no_power
     - Added configurable ramp-up deadband
     - Added a ramp-up stability delay that re-checks live household power before increasing current
@@ -80,20 +80,10 @@ blueprint:
           domain: sensor
           device_class: power
 
-    max_grid_power_day:
-      name: Maximum Grid Power during the day (W)
-      description: Maximum allowed total household power during the configured daytime period.
-      default: 4700
-      selector:
-        number:
-          min: 0
-          max: 30000
-          step: 100
-
-    max_grid_power_night:
-      name: Maximum Grid Power during the night (W)
-      description: Maximum allowed total household power outside the configured daytime period.
-      default: 6200
+    max_grid_power:
+      name: Maximum Grid Draw (W)
+      description: Maximum total household power draw the automation should allow.
+      default: 9000
       selector:
         number:
           min: 0
@@ -123,32 +113,6 @@ blueprint:
               value: three_phase_230
             - label: "Three-phase 400 V"
               value: three_phase_400
-            - label: "Custom"
-              value: custom
-
-    voltage:
-      name: Custom Voltage (V)
-      description: >
-        Used only when Charging Supply is set to Custom. Kept under the original input key
-        for backwards compatibility with existing blueprint automations.
-      default: 230
-      selector:
-        number:
-          min: 100
-          max: 500
-          step: 1
-
-    custom_phases:
-      name: Custom Supply Phases
-      description: Used only when Charging Supply is set to Custom.
-      default: "1"
-      selector:
-        select:
-          options:
-            - label: "Single phase"
-              value: "1"
-            - label: "Three phase"
-              value: "3"
 
     max_amps:
       name: Maximum amps
@@ -165,10 +129,10 @@ blueprint:
       description: >
         Minimum usable charging current. If calculated available power is below this value,
         the automation stops charging instead of requesting a lower current.
-      default: 8
+      default: 5
       selector:
         number:
-          min: 6
+          min: 5
           max: 32
           step: 1
 
@@ -256,51 +220,6 @@ blueprint:
       selector:
         boolean:
 
-    day_time_days:
-      name: Day Time Active Days
-      description: Days on which the daytime grid-power limit applies.
-      default:
-        - mon
-        - tue
-        - wed
-        - thu
-        - fri
-      selector:
-        select:
-          multiple: true
-          options:
-            - label: Monday
-              value: "mon"
-            - label: Tuesday
-              value: "tue"
-            - label: Wednesday
-              value: "wed"
-            - label: Thursday
-              value: "thu"
-            - label: Friday
-              value: "fri"
-            - label: Saturday
-              value: "sat"
-            - label: Sunday
-              value: "sun"
-
-    day_time_start:
-      name: Day Time Start Hour
-      default: 8
-      selector:
-        number:
-          min: 0
-          max: 23
-          step: 1
-
-    day_time_end:
-      name: Day Time End Hour
-      default: 24
-      selector:
-        number:
-          min: 0
-          max: 24
-          step: 1
 
 triggers:
   - trigger: time_pattern
@@ -321,8 +240,6 @@ condition:
 action:
   - variables:
       supply_type: !input supply_type
-      custom_voltage: !input voltage
-      custom_phases: !input custom_phases
       max_amps: !input max_amps
       min_amps: !input min_amps
       increase_step_amps: !input increase_step_amps
@@ -339,32 +256,15 @@ action:
       sensor_charging_entity: !input sensor_charging
       charger_toggle_entity: !input charger_toggle
 
-      max_grid_power_day: !input max_grid_power_day
-      max_grid_power_night: !input max_grid_power_night
-      day_time_days: !input day_time_days
-      day_time_start: !input day_time_start
-      day_time_end: !input day_time_end
-
-      current_day: "{{ ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'][now().weekday()] }}"
-      is_day_time: "{{ current_day in day_time_days and day_time_start <= now().hour < day_time_end }}"
-      active_grid_limit: >-
-        {% if is_day_time %}
-          {{ max_grid_power_day | float(0) }}
-        {% else %}
-          {{ max_grid_power_night | float(0) }}
-        {% endif %}
+      active_grid_limit: !input max_grid_power
 
       watts_per_amp: >-
         {% if supply_type == 'single_phase_230' %}
           {{ 230 }}
         {% elif supply_type == 'three_phase_230' %}
           {{ 230 * 1.7320508075688772 }}
-        {% elif supply_type == 'three_phase_400' %}
-          {{ 400 * 1.7320508075688772 }}
-        {% elif custom_phases == '3' %}
-          {{ (custom_voltage | float(230)) * 1.7320508075688772 }}
         {% else %}
-          {{ custom_voltage | float(230) }}
+          {{ 400 * 1.7320508075688772 }}
         {% endif %}
 
       charging_state: "{{ states(sensor_charging_entity) | lower }}"
