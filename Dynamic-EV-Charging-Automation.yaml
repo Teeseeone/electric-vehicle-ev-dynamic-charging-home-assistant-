@@ -1,46 +1,35 @@
 blueprint:
-  name: Dynamic EV Charging Automation v2.3
+  name: Dynamic EV Charging Automation v2.4
   description: >
+    **v2.4 - Supply presets, Tesla Fleet states, hysteresis and restart protection**
+    - Added single-phase 230 V, three-phase 230 V, three-phase 400 V and custom supply choices
+    - Added Tesla Fleet charging states: starting, charging, stopped, complete, disconnected and no_power
+    - Added configurable ramp-up deadband
+    - Added a ramp-up stability delay that re-checks live household power before increasing current
+    - Added a restart lockout after stopped/no_power states (default 5 minutes)
+    - Added optional debug entries in the Home Assistant logbook
+    - Keeps v2.3 support for switch-based start/stop and independent ramp-up/ramp-down settings
+
     **v2.3 - Tesla switch support and separate ramp-up/ramp-down behavior**
-    - EV Charging Toggle can now be either a select or switch entity
+    - EV Charging Toggle can be either a select or switch entity
     - Switch entities use turn_on to start charging and turn_off to stop charging
-    - Adds direct support for Tesla Fleet charging switches
+    - Added direct support for Tesla Fleet charging switches
     - Added independent step sizes and delays for increasing and decreasing charging current
-    - Allows faster load shedding when household consumption rises and gentler ramp-up when spare power becomes available
-    - Fixes the adjustment loop so a 0 A target stops charging without getting stuck trying to set the current below the configured minimum
+    - Improved handling when the target falls below the minimum charging current
 
     **v2.2 - Optional location tracker**
-    - The Car/Person Location Tracker is now optional
+    - The Car/Person Location Tracker is optional
     - Leave it empty to disable location-based checks
-    - Useful for shared chargers, multi-vehicle households, or when
-      the charger may serve cars not linked to the configured tracker
 
-    **v2.1 - Added case-insensitive charging status support
-    - Added support for "Charging" (capital C) status from ESPhome Tesla BLE
-    - Improved status detection to support multiple case variations
-    **v2.0 - Added start/stop control and fixed power calculation
-    - Added charger toggle control for start/stop
-    - Fixed power calculation formula
-    - Added gradual adjustment to prevent charger errors
-    - Improved oscillation prevention
+    This automation dynamically adjusts EV charging current based on household power consumption.
+    It supports direct Tesla Fleet charging control as well as the original select-based charger control.
 
-    This automation dynamically adjusts the charging current of an electric vehicle (EV) based on the total power consumption in the household.
-
-    It ensures that the EV charger does not exceed the available power, preventing overloads and optimizing energy usage. The system continuously monitors home power consumption and regulates the charging rate accordingly.
-
-    You can configure two different charging periods (Day and Night) if your electricity contract has varying power limits at different times.
-
-    Depending on what you have exposed in Home Assistant you could target your car or your charger. Works with any EV charger that supports amperage control via Home Assistant.
   domain: automation
+
   input:
     interval:
       name: Adjustment Interval (minutes)
-      description: >
-        Interval in minutes to adjust the charging amperage dynamically.
-
-        The automation will check the total household power consumption at this interval and adjust the EV charging current accordingly. A shorter interval (e.g., 1 minute) allows faster reactions to power fluctuations, while a longer interval (e.g., 5 minutes) reduces the number of adjustments but may respond more slowly to changes in home energy use.
-
-        Choose the interval based on how frequently you want the system to update the charging current in response to changes in household power consumption.
+      description: How often the automation recalculates available charging power.
       default: /1
       selector:
         select:
@@ -51,150 +40,225 @@ blueprint:
               value: /3
             - label: "5 minutes"
               value: /5
+
     device_tracker:
       name: Car/Person Location Tracker (Optional)
-      description: >
-        Optional entity that determines whether the electric vehicle (EV) is at home.
-
-        Leave this field empty to disable the location check entirely. This is useful when:
-        - Your charger may serve cars not linked to the configured tracker (guests, family vehicles, etc.)
-        - You own more than one car and don't want to tie regulation to a specific person/vehicle
-        - You want the automation to regulate based purely on the charging sensor state
-
-        When set, the automation will only adjust the charging current if the tracked entity is at "home".
+      description: Optional tracker. Leave empty to disable the location check.
       default: ""
       selector:
         entity:
           domain: device_tracker
+
     sensor_charging:
       name: EV Charging Sensor
       description: >
-        Sensor that detects whether the electric vehicle (EV) is currently charging.
-
-        The automation will only adjust the charging amperage if this sensor indicates that the EV is actively charging.
-
-        If the vehicle is at home but not plugged in or has already completed charging, no changes will be made to the charging current.
+        Charging-state sensor. Tesla Fleet reports states such as starting, charging,
+        stopped, complete, disconnected and no_power.
       default: sensor.ev_charger_estado
       selector:
         entity:
           domain: sensor
+
     charger_toggle:
       name: EV Charging Toggle (Start/Stop)
       description: >
-        Entity that controls the charging state of the EV charger.
-
-        Supports select entities with options like "Start charging" / "Stop charging",
+        Start/stop control. Supports select entities using "Start charging" / "Stop charging"
         and switch entities where turn_on starts charging and turn_off stops charging.
-        This allows direct use of charging switches such as Tesla Fleet.
-
-        When the calculated amperage falls below the minimum threshold, the automation will use this entity to stop charging instead of setting amperage to 0.
-
-        When power becomes available again, it will restart charging and set the appropriate amperage.
       default: select.ev_charger_toggle_charging
       selector:
         entity:
           domain:
             - select
             - switch
+
     sensor_house_power:
       name: Total Power Consumption Sensor
-      description: Sensor that measures the total power consumption of the household in real-time.  This value is used to determine the available power for charging the electric vehicle (EV), ensuring that the charging current is dynamically adjusted to prevent exceeding the contracted power limit.
+      description: Whole-house power consumption in watts.
       default: sensor.shellyemg3_8cbfea96acd8_em1_power
       selector:
         entity:
           domain: sensor
           device_class: power
+
     max_grid_power_day:
       name: Maximum Grid Power during the day (W)
-      description: The maximum contracted power (in watts) available for your home during daytime hours. This value determines the upper power limit when calculating the available energy for charging the electric vehicle (EV). Set this to **0** if you only want to allow charging during nighttime hours.
+      description: Maximum allowed total household power during the configured daytime period.
       default: 4700
       selector:
         number:
           min: 0
-          max: 15000
+          max: 30000
           step: 100
+
     max_grid_power_night:
       name: Maximum Grid Power during the night (W)
-      description:   The maximum contracted power (in watts) available for your home during nighttime hours. This value sets the upper power limit when calculating the available energy for charging the electric vehicle (EV). If your electricity provider allows higher power usage at night, you can set a higher value here to optimize charging.
+      description: Maximum allowed total household power outside the configured daytime period.
       default: 6200
       selector:
         number:
           min: 0
-          max: 15000
+          max: 30000
           step: 100
+
     charging_current:
       name: Charging Current Control
-      description: Entity that controls the charging amperage of the electric vehicle (EV). This must be a `number` entity that allows adjusting the charging current dynamically. The automation will modify this value based on the available power in the household, ensuring efficient energy use and preventing overloads.
+      description: Number entity used to set EV charging current.
       default: number.ev_charger_set_charge_current
       selector:
         entity:
           domain: number
+
+    supply_type:
+      name: Charging Supply
+      description: >
+        Select the electrical supply used for EV charging. Three-phase calculations use
+        sqrt(3) × line-to-line voltage × current.
+      default: single_phase_230
+      selector:
+        select:
+          options:
+            - label: "Single-phase 230 V"
+              value: single_phase_230
+            - label: "Three-phase 230 V"
+              value: three_phase_230
+            - label: "Three-phase 400 V"
+              value: three_phase_400
+            - label: "Custom"
+              value: custom
+
     voltage:
-      name: Voltage
-      description: Voltage used in your location (e.g., 120V for USA, 230V for EU)
+      name: Custom Voltage (V)
+      description: >
+        Used only when Charging Supply is set to Custom. Kept under the original input key
+        for backwards compatibility with existing blueprint automations.
       default: 230
       selector:
         number:
           min: 100
-          max: 240
-          step: 10
+          max: 500
+          step: 1
+
+    custom_phases:
+      name: Custom Supply Phases
+      description: Used only when Charging Supply is set to Custom.
+      default: "1"
+      selector:
+        select:
+          options:
+            - label: "Single phase"
+              value: "1"
+            - label: "Three phase"
+              value: "3"
+
     max_amps:
       name: Maximum amps
-      description:   Select the maximum charging current (in amps) that the electric vehicle (EV) should use. The automation will never set the charging amperage above this limit, even if there is enough available power in the household. Set this value according to the specifications of your EV charger and electrical system to ensure safe and optimal charging.
+      description: Maximum charging current the automation may request.
       default: 20
       selector:
         number:
           min: 6
           max: 32
           step: 1
+
     min_amps:
       name: Minimum amps
-      description:   Select the minimum charging current (in amps) that the electric vehicle (EV) should use. If the calculated charging amperage falls below this value due to limited available power, the automation will stop charging until more power is available. This helps prevent inefficient low-power charging and ensures the EV charges only when there is sufficient energy available.
+      description: >
+        Minimum usable charging current. If calculated available power is below this value,
+        the automation stops charging instead of requesting a lower current.
       default: 8
       selector:
         number:
           min: 6
           max: 32
           step: 1
+
     increase_step_amps:
       name: Ramp-up step size (A)
-      description: Number of amps to increase per adjustment step when more charging power is available. Smaller values provide a gentler ramp-up.
+      description: Amps added per ramp-up step.
       default: 1
       selector:
         number:
           min: 1
           max: 10
           step: 1
+
     increase_delay_seconds:
       name: Ramp-up delay (seconds)
-      description: Delay between amperage increases. A longer delay makes charging ramp up more slowly.
+      description: Delay between ramp-up steps.
       default: 10
       selector:
         number:
           min: 1
           max: 60
           step: 1
+
     decrease_step_amps:
       name: Ramp-down step size (A)
-      description: Number of amps to reduce per adjustment step when household power usage rises. Larger values shed EV load faster.
+      description: Amps removed per ramp-down step.
       default: 2
       selector:
         number:
           min: 1
           max: 10
           step: 1
+
     decrease_delay_seconds:
       name: Ramp-down delay (seconds)
-      description: Delay between amperage reductions. A shorter delay sheds EV load faster.
+      description: Delay between ramp-down steps.
       default: 10
       selector:
         number:
           min: 1
           max: 60
           step: 1
+
+    ramp_up_deadband_amps:
+      name: Ramp-up deadband (A)
+      description: >
+        Ignore small increases that are within this many amps of the current setting.
+        Ramp-down is never blocked by this deadband.
+      default: 1
+      selector:
+        number:
+          min: 0
+          max: 5
+          step: 1
+
+    ramp_up_stability_seconds:
+      name: Ramp-up stability time (seconds)
+      description: >
+        Before increasing current, wait this long and then recalculate using fresh household
+        power. The increase only continues if spare power is still available.
+      default: 30
+      selector:
+        number:
+          min: 0
+          max: 300
+          step: 5
+
+    restart_delay_seconds:
+      name: Restart delay after stop (seconds)
+      description: >
+        Minimum time the charging-state sensor must remain stopped/no_power before the
+        automation may restart charging. Default is 300 seconds (5 minutes).
+      default: 300
+      selector:
+        number:
+          min: 0
+          max: 1800
+          step: 30
+
+    debug_logging:
+      name: Debug logging
+      description: >
+        Write calculation and decision details to the Home Assistant Logbook.
+      default: false
+      selector:
+        boolean:
+
     day_time_days:
       name: Day Time Active Days
-      description: Select the days of the week when the 'day_time' mode should be active. During these selected days, the automation will apply the maximum contracted power for daytime charging. If your electricity provider offers different power limits on specific days, you can configure this accordingly to optimize charging.
+      description: Days on which the daytime grid-power limit applies.
       default:
         - mon
         - tue
@@ -219,18 +283,18 @@ blueprint:
               value: "sat"
             - label: Sunday
               value: "sun"
+
     day_time_start:
       name: Day Time Start Hour
-      description: Choose the starting hour for 'day_time' mode. At this time, the automation will switch to the maximum contracted power for daytime charging. This is useful if your electricity provider allows higher power usage during specific hours or if you want to prioritize charging during the day. Make sure this time aligns with your electricity plan to optimize energy consumption.
       default: 8
       selector:
         number:
           min: 0
           max: 23
           step: 1
+
     day_time_end:
       name: Day Time End Hour
-      description: Choose the ending hour for 'day_time' mode. After this time, the automation will switch to nighttime settings, adjusting the charging power accordingly.
       default: 24
       selector:
         number:
@@ -246,138 +310,417 @@ variables:
   device_tracker_input: !input device_tracker
 
 condition:
-  - condition: and
+  - condition: or
     conditions:
-      - condition: or
-        conditions:
-          - condition: template
-            value_template: "{{ device_tracker_input in [none, '', 'none'] }}"
-          - condition: state
-            entity_id: !input device_tracker
-            state: home
+      - condition: template
+        value_template: "{{ device_tracker_input in [none, '', 'none'] }}"
       - condition: state
-        entity_id: !input sensor_charging
-        state:
-          - 'charging'
-          - 'charged'
-          - 'plugged_in'
-          - 'Charging'
-          - 'CHARGING'
+        entity_id: !input device_tracker
+        state: home
 
 action:
   - variables:
-      voltage: !input voltage
+      supply_type: !input supply_type
+      custom_voltage: !input voltage
+      custom_phases: !input custom_phases
       max_amps: !input max_amps
       min_amps: !input min_amps
       increase_step_amps: !input increase_step_amps
       increase_delay_seconds: !input increase_delay_seconds
       decrease_step_amps: !input decrease_step_amps
       decrease_delay_seconds: !input decrease_delay_seconds
+      ramp_up_deadband_amps: !input ramp_up_deadband_amps
+      ramp_up_stability_seconds: !input ramp_up_stability_seconds
+      restart_delay_seconds: !input restart_delay_seconds
+      debug_logging: !input debug_logging
+
       sensor_house_power_entity: !input sensor_house_power
       charging_current_entity: !input charging_current
       sensor_charging_entity: !input sensor_charging
       charger_toggle_entity: !input charger_toggle
-      charging_current_value: "{{ states(charging_current_entity) | float(0) }}"
-      grid_power: "{{ states(sensor_house_power_entity) | float(0) }}"
-      total_consumption: "{{ states(sensor_house_power_entity) | float(0) }}"
-      charger_consumption: |-
-        {% set state = states(sensor_charging_entity) | lower %}
-        {% if state in ['charging', 'plugged_in', 'waiting_for_authorization', 'waiting'] %}
-          {{ charging_current_value * voltage }}
-        {% else %}
-          0
-        {% endif %}
+
       max_grid_power_day: !input max_grid_power_day
       max_grid_power_night: !input max_grid_power_night
       day_time_days: !input day_time_days
       day_time_start: !input day_time_start
       day_time_end: !input day_time_end
+
       current_day: "{{ ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'][now().weekday()] }}"
       is_day_time: "{{ current_day in day_time_days and day_time_start <= now().hour < day_time_end }}"
-      actual_free_power: |-
+      active_grid_limit: >-
         {% if is_day_time %}
-          {{ [0, max_grid_power_day - total_consumption + charger_consumption] | max }}
+          {{ max_grid_power_day | float(0) }}
         {% else %}
-          {{ [0, max_grid_power_night - total_consumption + charger_consumption] | max }}
+          {{ max_grid_power_night | float(0) }}
         {% endif %}
-      # Compute new_target_value once before starting the adjustment loop
+
+      watts_per_amp: >-
+        {% if supply_type == 'single_phase_230' %}
+          {{ 230 }}
+        {% elif supply_type == 'three_phase_230' %}
+          {{ 230 * 1.7320508075688772 }}
+        {% elif supply_type == 'three_phase_400' %}
+          {{ 400 * 1.7320508075688772 }}
+        {% elif custom_phases == '3' %}
+          {{ (custom_voltage | float(230)) * 1.7320508075688772 }}
+        {% else %}
+          {{ custom_voltage | float(230) }}
+        {% endif %}
+
+      charging_state: "{{ states(sensor_charging_entity) | lower }}"
+      charging_current_value: "{{ states(charging_current_entity) | float(0) }}"
+      total_consumption: "{{ states(sensor_house_power_entity) | float(0) }}"
+
+      charger_consumption: >-
+        {% if charging_state in ['charging', 'starting'] %}
+          {{ (charging_current_value | float(0)) * (watts_per_amp | float(230)) }}
+        {% else %}
+          0
+        {% endif %}
+
+      actual_free_power: >-
+        {{ [0, (active_grid_limit | float(0)) - (total_consumption | float(0)) + (charger_consumption | float(0))] | max }}
+
       new_target_value: >-
-        {% set raw_amps = (actual_free_power / voltage) | float %}
-        {% if raw_amps > max_amps %}
+        {% set raw_amps = (actual_free_power | float(0)) / (watts_per_amp | float(230)) %}
+        {% if raw_amps > (max_amps | float) %}
           {{ max_amps | float }}
-        {% elif raw_amps < min_amps %}
-          0.0
+        {% elif raw_amps < (min_amps | float) %}
+          0
         {% else %}
           {{ raw_amps | int }}
         {% endif %}
 
-  # First: Control charging state (Start/Stop)
-  # Supports both select entities and switch entities (for example Tesla Fleet).
+      stopped_seconds: >-
+        {% if charging_state in ['stopped', 'no_power'] %}
+          {{ as_timestamp(now()) - as_timestamp(states[sensor_charging_entity].last_changed) }}
+        {% else %}
+          0
+        {% endif %}
+
+      eligible_states:
+        - charging
+        - starting
+        - stopped
+        - no_power
+        - plugged_in
+        - waiting
+        - waiting_for_authorization
+
+  # Do not interfere when charging is complete, disconnected, unavailable, or in an unsupported state.
   - choose:
       - conditions:
           - condition: template
-            value_template: "{{ charger_toggle_entity.startswith('switch.') }}"
+            value_template: "{{ charging_state not in eligible_states }}"
         sequence:
           - choose:
               - conditions:
                   - condition: template
-                    value_template: "{{ actual_free_power / voltage >= min_amps }}"
+                    value_template: "{{ debug_logging }}"
                 sequence:
-                  - action: switch.turn_on
-                    target:
-                      entity_id: !input charger_toggle
-            default:
-              - action: switch.turn_off
-                target:
-                  entity_id: !input charger_toggle
-    default:
-      - action: select.select_option
-        target:
-          entity_id: !input charger_toggle
-        data:
-          option: |-
-            {% if actual_free_power / voltage >= min_amps %}
-              Start charging
-            {% else %}
-              Stop charging
-            {% endif %}
+                  - action: logbook.log
+                    data:
+                      name: Dynamic EV Charging v2.4
+                      entity_id: !input sensor_charging
+                      message: >-
+                        HOLD: charging state '{{ charging_state }}' is not eligible for dynamic control.
+          - stop: Charging state is not eligible for dynamic control
 
-  # Adjust current only when the target is at or above the configured minimum.
-  # A target of 0 A is handled by the charger start/stop control above.
+  # Stop charging when available power is below the configured minimum.
   - choose:
       - conditions:
           - condition: template
-            value_template: "{{ (new_target_value | float) >= (min_amps | float) }}"
+            value_template: "{{ (new_target_value | float(0)) < (min_amps | float) }}"
         sequence:
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ charger_toggle_entity.startswith('switch.') }}"
+                sequence:
+                  - action: switch.turn_off
+                    target:
+                      entity_id: !input charger_toggle
+            default:
+              - action: select.select_option
+                target:
+                  entity_id: !input charger_toggle
+                data:
+                  option: Stop charging
+
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ debug_logging }}"
+                sequence:
+                  - action: logbook.log
+                    data:
+                      name: Dynamic EV Charging v2.4
+                      entity_id: !input charging_current
+                      message: >-
+                        STOP: house={{ total_consumption | round(0) }} W,
+                        limit={{ active_grid_limit | round(0) }} W,
+                        free={{ actual_free_power | round(0) }} W,
+                        target=0 A, state={{ charging_state }}.
+          - stop: Not enough power to charge above the minimum current
+
+  # If Tesla/charger is stopped or has no power, enforce the restart lockout.
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ charging_state in ['stopped', 'no_power'] }}"
+        sequence:
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ (stopped_seconds | float(0)) < (restart_delay_seconds | float(0)) }}"
+                sequence:
+                  - choose:
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ debug_logging }}"
+                        sequence:
+                          - action: logbook.log
+                            data:
+                              name: Dynamic EV Charging v2.4
+                              entity_id: !input sensor_charging
+                              message: >-
+                                WAIT TO RESTART: stopped for {{ stopped_seconds | int }} s;
+                                restart lockout={{ restart_delay_seconds | int }} s.
+                  - stop: Restart lockout is still active
+
+          # Require stable spare power and recalculate from fresh sensor values before restarting.
+          - delay:
+              seconds: "{{ ramp_up_stability_seconds | int }}"
+
+          - variables:
+              confirmed_total_consumption: "{{ states(sensor_house_power_entity) | float(0) }}"
+              confirmed_free_power: >-
+                {{ [0, (active_grid_limit | float(0)) - (states(sensor_house_power_entity) | float(0))] | max }}
+              confirmed_target: >-
+                {% set raw_amps = (confirmed_free_power | float(0)) / (watts_per_amp | float(230)) %}
+                {% if raw_amps > (max_amps | float) %}
+                  {{ max_amps | float }}
+                {% elif raw_amps < (min_amps | float) %}
+                  0
+                {% else %}
+                  {{ raw_amps | int }}
+                {% endif %}
+
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ (confirmed_target | float(0)) >= (min_amps | float) }}"
+                sequence:
+                  # Set a safe starting current before turning charging back on.
+                  - action: number.set_value
+                    target:
+                      entity_id: !input charging_current
+                    data:
+                      value: "{{ min_amps | float }}"
+
+                  - choose:
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ charger_toggle_entity.startswith('switch.') }}"
+                        sequence:
+                          - action: switch.turn_on
+                            target:
+                              entity_id: !input charger_toggle
+                    default:
+                      - action: select.select_option
+                        target:
+                          entity_id: !input charger_toggle
+                        data:
+                          option: Start charging
+
+                  - choose:
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ debug_logging }}"
+                        sequence:
+                          - action: logbook.log
+                            data:
+                              name: Dynamic EV Charging v2.4
+                              entity_id: !input charging_current
+                              message: >-
+                                RESTART: stable free power={{ confirmed_free_power | round(0) }} W,
+                                confirmed target={{ confirmed_target | round(0) }} A.
+            default:
+              - choose:
+                  - conditions:
+                      - condition: template
+                        value_template: "{{ debug_logging }}"
+                    sequence:
+                      - action: logbook.log
+                        data:
+                          name: Dynamic EV Charging v2.4
+                          entity_id: !input sensor_charging
+                          message: >-
+                            HOLD STOPPED: power was not still sufficient after
+                            {{ ramp_up_stability_seconds | int }} s stability check.
+              - stop: Spare power was not stable enough to restart
+
+          # Ramp from the safe minimum toward the confirmed target.
           - repeat:
               while:
                 - condition: template
                   value_template: >-
-                    {% set current_amps = states(charging_current_entity) | float %}
-                    {% set diff = (current_amps - (new_target_value | float)) | abs %}
-                    {{ diff >= 1 }}
+                    {{ (states(charging_current_entity) | float(0)) < (confirmed_target | float(0)) }}
               sequence:
                 - variables:
-                    current_amps_before_step: "{{ states(charging_current_entity) | float }}"
-                    adjustment_delay: >-
-                      {% if current_amps_before_step < (new_target_value | float) %}
-                        {{ increase_delay_seconds }}
-                      {% else %}
-                        {{ decrease_delay_seconds }}
-                      {% endif %}
+                    current_amps_before_step: "{{ states(charging_current_entity) | float(0) }}"
                 - action: number.set_value
                   target:
                     entity_id: !input charging_current
                   data:
                     value: >-
-                      {% if current_amps_before_step < (new_target_value | float) %}
-                        {{ [current_amps_before_step + (increase_step_amps | float), new_target_value | float] | min }}
-                      {% elif current_amps_before_step > (new_target_value | float) %}
-                        {{ [current_amps_before_step - (decrease_step_amps | float), new_target_value | float] | max }}
-                      {% else %}
-                        {{ new_target_value }}
-                      {% endif %}
+                      {{ [current_amps_before_step + (increase_step_amps | float),
+                          confirmed_target | float] | min }}
                 - delay:
-                    seconds: "{{ adjustment_delay | int }}"
+                    seconds: "{{ increase_delay_seconds | int }}"
+
+          - stop: Restart sequence completed
+
+  # Active charging: reduce immediately when the calculated target is lower.
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: >-
+              {{ (charging_current_value | float(0)) > (new_target_value | float(0)) }}
+        sequence:
+          - repeat:
+              while:
+                - condition: template
+                  value_template: >-
+                    {{ (states(charging_current_entity) | float(0)) > (new_target_value | float(0)) }}
+              sequence:
+                - variables:
+                    current_amps_before_step: "{{ states(charging_current_entity) | float(0) }}"
+                - action: number.set_value
+                  target:
+                    entity_id: !input charging_current
+                  data:
+                    value: >-
+                      {{ [current_amps_before_step - (decrease_step_amps | float),
+                          new_target_value | float] | max }}
+                - delay:
+                    seconds: "{{ decrease_delay_seconds | int }}"
+
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ debug_logging }}"
+                sequence:
+                  - action: logbook.log
+                    data:
+                      name: Dynamic EV Charging v2.4
+                      entity_id: !input charging_current
+                      message: >-
+                        RAMP DOWN: house={{ total_consumption | round(0) }} W,
+                        free={{ actual_free_power | round(0) }} W,
+                        target={{ new_target_value | round(0) }} A.
+          - stop: Ramp-down completed
+
+  # Ignore small upward changes inside the configured deadband.
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: >-
+              {{ (new_target_value | float(0)) <=
+                 ((charging_current_value | float(0)) + (ramp_up_deadband_amps | float(0))) }}
+        sequence:
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ debug_logging }}"
+                sequence:
+                  - action: logbook.log
+                    data:
+                      name: Dynamic EV Charging v2.4
+                      entity_id: !input charging_current
+                      message: >-
+                        HOLD: current={{ charging_current_value | round(0) }} A,
+                        target={{ new_target_value | round(0) }} A is within the
+                        {{ ramp_up_deadband_amps | round(0) }} A ramp-up deadband.
+          - stop: Target is within ramp-up deadband
+
+  # Before ramping up, wait and re-read live house power.
+  - delay:
+      seconds: "{{ ramp_up_stability_seconds | int }}"
+
+  - variables:
+      confirmed_total_consumption: "{{ states(sensor_house_power_entity) | float(0) }}"
+      confirmed_charging_state: "{{ states(sensor_charging_entity) | lower }}"
+      confirmed_current: "{{ states(charging_current_entity) | float(0) }}"
+      confirmed_charger_consumption: >-
+        {% if confirmed_charging_state in ['charging', 'starting'] %}
+          {{ (confirmed_current | float(0)) * (watts_per_amp | float(230)) }}
+        {% else %}
+          0
+        {% endif %}
+      confirmed_free_power: >-
+        {{ [0, (active_grid_limit | float(0)) - (confirmed_total_consumption | float(0))
+              + (confirmed_charger_consumption | float(0))] | max }}
+      confirmed_target: >-
+        {% set raw_amps = (confirmed_free_power | float(0)) / (watts_per_amp | float(230)) %}
+        {% if raw_amps > (max_amps | float) %}
+          {{ max_amps | float }}
+        {% elif raw_amps < (min_amps | float) %}
+          0
+        {% else %}
+          {{ raw_amps | int }}
+        {% endif %}
+
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: >-
+              {{ (confirmed_target | float(0)) >
+                 ((confirmed_current | float(0)) + (ramp_up_deadband_amps | float(0))) }}
+        sequence:
+          - repeat:
+              while:
+                - condition: template
+                  value_template: >-
+                    {{ (states(charging_current_entity) | float(0)) < (confirmed_target | float(0)) }}
+              sequence:
+                - variables:
+                    current_amps_before_step: "{{ states(charging_current_entity) | float(0) }}"
+                - action: number.set_value
+                  target:
+                    entity_id: !input charging_current
+                  data:
+                    value: >-
+                      {{ [current_amps_before_step + (increase_step_amps | float),
+                          confirmed_target | float] | min }}
+                - delay:
+                    seconds: "{{ increase_delay_seconds | int }}"
+
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ debug_logging }}"
+                sequence:
+                  - action: logbook.log
+                    data:
+                      name: Dynamic EV Charging v2.4
+                      entity_id: !input charging_current
+                      message: >-
+                        RAMP UP: fresh house={{ confirmed_total_consumption | round(0) }} W,
+                        free={{ confirmed_free_power | round(0) }} W,
+                        confirmed target={{ confirmed_target | round(0) }} A.
+    default:
+      - choose:
+          - conditions:
+              - condition: template
+                value_template: "{{ debug_logging }}"
+            sequence:
+              - action: logbook.log
+                data:
+                  name: Dynamic EV Charging v2.4
+                  entity_id: !input charging_current
+                  message: >-
+                    HOLD AFTER STABILITY CHECK: fresh target={{ confirmed_target | round(0) }} A,
+                    current={{ confirmed_current | round(0) }} A.
 
 mode: restart
