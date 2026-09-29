@@ -1,6 +1,12 @@
 blueprint:
-  name: Dynamic EV Charging Automation v2.3
+  name: Dynamic EV Charging Automation v2.4
   description: >
+    **v2.4 - Separate ramp-up and ramp-down behavior**
+    - Added independent step sizes and delays for increasing and decreasing charging current
+    - Allows fast load shedding when household consumption rises
+    - Allows slower, gentler ramp-up when spare power becomes available
+    - Fixes the adjustment loop so a 0 A target stops charging without getting stuck trying to set the current below the configured minimum
+
     **v2.3 - Added switch support for charging start/stop**
     - EV Charging Toggle can now be either a select or switch entity
     - Switch entities use turn_on to start charging and turn_off to stop charging
@@ -154,6 +160,42 @@ blueprint:
           min: 6
           max: 32
           step: 1
+    increase_step_amps:
+      name: Ramp-up step size (A)
+      description: Number of amps to increase per adjustment step when more charging power is available. Smaller values provide a gentler ramp-up.
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 10
+          step: 1
+    increase_delay_seconds:
+      name: Ramp-up delay (seconds)
+      description: Delay between amperage increases. A longer delay makes charging ramp up more slowly.
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 60
+          step: 1
+    decrease_step_amps:
+      name: Ramp-down step size (A)
+      description: Number of amps to reduce per adjustment step when household power usage rises. Larger values shed EV load faster.
+      default: 2
+      selector:
+        number:
+          min: 1
+          max: 10
+          step: 1
+    decrease_delay_seconds:
+      name: Ramp-down delay (seconds)
+      description: Delay between amperage reductions. A shorter delay sheds EV load faster.
+      default: 2
+      selector:
+        number:
+          min: 1
+          max: 60
+          step: 1
     day_time_days:
       name: Day Time Active Days
       description: Select the days of the week when the 'day_time' mode should be active. During these selected days, the automation will apply the maximum contracted power for daytime charging. If your electricity provider offers different power limits on specific days, you can configure this accordingly to optimize charging.
@@ -231,6 +273,10 @@ action:
       voltage: !input voltage
       max_amps: !input max_amps
       min_amps: !input min_amps
+      increase_step_amps: !input increase_step_amps
+      increase_delay_seconds: !input increase_delay_seconds
+      decrease_step_amps: !input decrease_step_amps
+      decrease_delay_seconds: !input decrease_delay_seconds
       sensor_house_power_entity: !input sensor_house_power
       charging_current_entity: !input charging_current
       sensor_charging_entity: !input sensor_charging
@@ -300,30 +346,42 @@ action:
               Stop charging
             {% endif %}
 
-  - repeat:
-      while:
-        # While the difference between the current charging value and new_target_value is >= 1 A,
-        # continue adjusting the current in steps of 1 amp
-        - condition: template
-          value_template: >-
-            {% set current_amps = states(charging_current_entity) | float %}
-            {% set diff = (current_amps - (new_target_value | float)) | abs %}
-            {{ diff >= 1 }}
-      sequence:
-        - service: number.set_value
-          target:
-            entity_id: !input charging_current
-          data:
-            value: >-
-              {% set current_amps = states(charging_current_entity) | float %}
-              {% if current_amps < (new_target_value | float) %}
-                {{ current_amps + 1 }}
-              {% elif current_amps > (new_target_value | float) %}
-                {{ [current_amps - 1, min_amps] | max }}
-              {% else %}
-                {{ new_target_value }}
-              {% endif %}
-        - delay:
-            seconds: 5
+  # Adjust current only when the target is at or above the configured minimum.
+  # A target of 0 A is handled by the charger start/stop control above.
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ (new_target_value | float) >= (min_amps | float) }}"
+        sequence:
+          - repeat:
+              while:
+                - condition: template
+                  value_template: >-
+                    {% set current_amps = states(charging_current_entity) | float %}
+                    {% set diff = (current_amps - (new_target_value | float)) | abs %}
+                    {{ diff >= 1 }}
+              sequence:
+                - variables:
+                    current_amps_before_step: "{{ states(charging_current_entity) | float }}"
+                    adjustment_delay: >-
+                      {% if current_amps_before_step < (new_target_value | float) %}
+                        {{ increase_delay_seconds }}
+                      {% else %}
+                        {{ decrease_delay_seconds }}
+                      {% endif %}
+                - action: number.set_value
+                  target:
+                    entity_id: !input charging_current
+                  data:
+                    value: >-
+                      {% if current_amps_before_step < (new_target_value | float) %}
+                        {{ [current_amps_before_step + (increase_step_amps | float), new_target_value | float] | min }}
+                      {% elif current_amps_before_step > (new_target_value | float) %}
+                        {{ [current_amps_before_step - (decrease_step_amps | float), new_target_value | float] | max }}
+                      {% else %}
+                        {{ new_target_value }}
+                      {% endif %}
+                - delay:
+                    seconds: "{{ adjustment_delay | int }}"
 
 mode: restart
