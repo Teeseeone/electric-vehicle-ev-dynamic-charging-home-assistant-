@@ -70,7 +70,6 @@ Options:
 - Single-phase 230 V
 - Three-phase 230 V
 - Three-phase 400 V
-- Custom
 
 The blueprint uses:
 
@@ -90,7 +89,6 @@ Examples at 16 A:
 3-phase 400 V  ≈ 11.09 kW
 ```
 
-The old `voltage` blueprint input is retained as **Custom Voltage** for backwards compatibility and is only used when **Custom** supply is selected.
 
 ## Tesla Fleet charging states
 
@@ -281,12 +279,14 @@ The blueprint expects:
 - charging-state `sensor`
 - optional `device_tracker`
 - correct electrical supply choice
-- maximum grid power for day/night
+- maximum grid draw
 - minimum and maximum charging current
 
 ---
 
 # How the power calculation works
+
+The blueprint uses one **Maximum Grid Draw (W)** limit at all times. There are no separate day/night limits or time schedules in v2.4.
 
 The blueprint determines a watts-per-amp value from the selected electrical supply.
 
@@ -320,6 +320,9 @@ Ramp-down delay:           10 s
 Ramp-up deadband:          1 A
 Ramp-up stability time:    30 s
 
+Minimum charging current:  5 A
+Maximum grid draw:          9000 W
+
 Restart delay:             300 s / 5 min
 Debug logging:             Off
 ```
@@ -342,7 +345,10 @@ Three-phase 400 V
 
 ## v2.4 — development
 
-- Added 1-phase 230 V, 3-phase 230 V, 3-phase 400 V and custom supply choices
+- Added 1-phase 230 V, 3-phase 230 V and 3-phase 400 V supply choices
+- Removed Custom supply settings
+- Replaced separate day/night grid limits and schedules with one Maximum Grid Draw setting
+- Set the minimum charging-current default/range floor to 5 A
 - Corrected three-phase power/current calculations
 - Added Tesla Fleet charging-state handling
 - Added ramp-up deadband
@@ -384,7 +390,7 @@ This repository is a fork of:
 
 https://github.com/EDV11/electric-vehicle-ev-dynamic-charging-home-assistant-
 
-The original project provides the core dynamic charging concept, day/night grid limits, optional location tracking and the original start/stop logic.
+The original project provides the core dynamic charging concept, day/night grid limits, optional location tracking and the original start/stop logic. This fork's v2.4 development branch simplifies the grid limit to one Maximum Grid Draw value.
 
 This fork adds direct Tesla Fleet control and the additional charging stability logic documented above.
 
