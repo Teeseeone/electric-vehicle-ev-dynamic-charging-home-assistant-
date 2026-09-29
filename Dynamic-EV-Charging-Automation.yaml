@@ -8,6 +8,7 @@ blueprint:
     - Added a ramp-up stability delay that re-checks live household power before increasing current
     - Added a restart lockout after stopped/no_power states (default 5 minutes)
     - Added configurable starting charging current for start/restart
+    - Added optional measured charger power + current calibration using real W/A
     - Added optional debug entries in the Home Assistant logbook
     - Keeps v2.3 support for switch-based start/stop and independent ramp-up/ramp-down settings
 
@@ -94,6 +95,20 @@ blueprint:
         entity:
           domain: sensor
           device_class: power
+
+    charger_current_sensor:
+      name: Actual Charger Current Sensor (Optional)
+      description: >
+        Optional measured EV charger current sensor in amps. When both actual charger
+        power and actual charger current are available and above zero, the blueprint
+        derives the real watts-per-amp value from measured W / A. This improves target
+        current calculation on installations where the theoretical supply formula does
+        not closely match the charger's real measured behavior.
+      default: ""
+      selector:
+        entity:
+          domain: sensor
+          device_class: current
 
     charger_status_sensor:
       name: Local Charger Status Sensor (Optional)
@@ -292,6 +307,7 @@ action:
 
       sensor_house_power_entity: !input sensor_house_power
       charger_power_sensor_input: !input charger_power_sensor
+      charger_current_sensor_input: !input charger_current_sensor
       charger_status_sensor_input: !input charger_status_sensor
       charging_current_entity: !input charging_current
       sensor_charging_entity: !input sensor_charging
@@ -299,7 +315,7 @@ action:
 
       active_grid_limit: !input max_grid_power
 
-      watts_per_amp: >-
+      theoretical_watts_per_amp: >-
         {% if supply_type == 'single_phase_230' %}
           {{ 230 }}
         {% elif supply_type == 'three_phase_230' %}
@@ -337,6 +353,28 @@ action:
           {{ states(charger_power_sensor_input) | float(0) }}
         {% else %}
           0
+        {% endif %}
+
+      measured_charger_current: >-
+        {% if charger_current_sensor_input not in [none, '', 'none'] %}
+          {{ states(charger_current_sensor_input) | float(0) }}
+        {% else %}
+          0
+        {% endif %}
+
+      watts_per_amp_source: >-
+        {% if (measured_charger_power | float(0)) > 0
+              and (measured_charger_current | float(0)) > 0 %}
+          measured
+        {% else %}
+          theoretical
+        {% endif %}
+
+      watts_per_amp: >-
+        {% if watts_per_amp_source == 'measured' %}
+          {{ (measured_charger_power | float(0)) / (measured_charger_current | float(0)) }}
+        {% else %}
+          {{ theoretical_watts_per_amp | float(230) }}
         {% endif %}
 
       charger_power_source: >-
@@ -444,6 +482,7 @@ action:
                       message: >-
                         STOP: house={{ total_consumption | round(0) }} W,
                         charger={{ charger_consumption | round(0) }} W ({{ charger_power_source }}),
+                        W/A={{ watts_per_amp | round(1) }} ({{ watts_per_amp_source }}),
                         limit={{ active_grid_limit | round(0) }} W,
                         free={{ actual_free_power | round(0) }} W,
                         target=0 A, state={{ charging_state }}.
@@ -629,6 +668,7 @@ action:
                       message: >-
                         RAMP DOWN: house={{ total_consumption | round(0) }} W,
                         charger={{ charger_consumption | round(0) }} W ({{ charger_power_source }}),
+                        W/A={{ watts_per_amp | round(1) }} ({{ watts_per_amp_source }}),
                         free={{ actual_free_power | round(0) }} W,
                         target={{ new_target_value | round(0) }} A.
           - stop: Ramp-down completed
@@ -729,6 +769,7 @@ action:
                       message: >-
                         RAMP UP: fresh house={{ confirmed_total_consumption | round(0) }} W,
                         free={{ confirmed_free_power | round(0) }} W,
+                        W/A={{ watts_per_amp | round(1) }} ({{ watts_per_amp_source }}),
                         confirmed target={{ confirmed_target | round(0) }} A.
     default:
       - choose:
