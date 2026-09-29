@@ -186,7 +186,19 @@ This is intended to reduce repeated stop/start cycling.
 
 If the calculated target is below **Minimum amps**, the target becomes 0 A and the blueprint uses the configured charging start/stop entity instead of trying to request an invalid low charging current.
 
-When restarting, the current is set to the configured minimum before charging is turned back on.
+## Starting charging current
+
+v2.4 has a separate **Starting charging amps** setting.
+
+Default:
+
+```text
+6 A
+```
+
+Before starting or restarting charging, the blueprint sets the charging-current entity to this preferred start value. For safety, the requested start current is clamped so it can never exceed the current calculated safe target or **Maximum amps**.
+
+After charging starts, the normal ramp-up logic takes over.
 
 ## Optional debug logging
 
@@ -333,6 +345,7 @@ Ramp-up deadband:          1 A
 Ramp-up stability time:    30 s
 
 Minimum charging current:  1 A (requested minimum; EV/charger may enforce a higher physical minimum)
+Starting charging current:  6 A
 Maximum grid draw:          9000 W
 
 Restart delay:             300 s / 5 min
@@ -367,6 +380,7 @@ Three-phase 400 V
 - Added fresh-power ramp-up stability check
 - Added 5-minute default restart lockout
 - Added safe minimum-current restart behavior
+- Added configurable starting charging current (default 6 A), clamped to the current safe target
 - Added optional measured charger-power input with electrical-supply fallback
 - Added optional local charger-status input, preferred over slow vehicle telemetry when available
 - Lowered the configurable requested minimum charging current to 1 A
