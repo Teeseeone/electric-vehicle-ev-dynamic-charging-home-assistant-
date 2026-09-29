@@ -7,6 +7,7 @@ blueprint:
     - Added configurable ramp-up deadband
     - Added a ramp-up stability delay that re-checks live household power before increasing current
     - Added a restart lockout after stopped/no_power states (default 5 minutes)
+    - Added configurable starting charging current for start/restart
     - Added optional debug entries in the Home Assistant logbook
     - Keeps v2.3 support for switch-based start/stop and independent ramp-up/ramp-down settings
 
@@ -163,6 +164,19 @@ blueprint:
           max: 32
           step: 1
 
+    starting_amps:
+      name: Starting charging amps
+      description: >
+        Preferred current to request immediately before starting or restarting charging.
+        The automation will never use a starting current above the currently calculated
+        safe target or Maximum amps.
+      default: 6
+      selector:
+        number:
+          min: 1
+          max: 32
+          step: 1
+
     increase_step_amps:
       name: Ramp-up step size (A)
       description: Amps added per ramp-up step.
@@ -266,6 +280,7 @@ action:
       supply_type: !input supply_type
       max_amps: !input max_amps
       min_amps: !input min_amps
+      starting_amps: !input starting_amps
       increase_step_amps: !input increase_step_amps
       increase_delay_seconds: !input increase_delay_seconds
       decrease_step_amps: !input decrease_step_amps
@@ -480,18 +495,20 @@ action:
                 {% else %}
                   {{ raw_amps | int }}
                 {% endif %}
+              safe_start_amps: >-
+                {{ [starting_amps | float, confirmed_target | float, max_amps | float] | min }}
 
           - choose:
               - conditions:
                   - condition: template
                     value_template: "{{ (confirmed_target | float(0)) >= (min_amps | float) }}"
                 sequence:
-                  # Set a safe starting current before turning charging back on.
+                  # Set the configured starting current, clamped to the safe target.
                   - action: number.set_value
                     target:
                       entity_id: !input charging_current
                     data:
-                      value: "{{ min_amps | float }}"
+                      value: "{{ safe_start_amps | float }}"
 
                   - choose:
                       - conditions:
@@ -523,7 +540,9 @@ action:
                                 {% else %}
                                   START COMMAND SENT via select-based charger control.
                                 {% endif %}
-                                Requested start current={{ min_amps | round(0) }} A.
+                                Requested start current={{ safe_start_amps | round(0) }} A
+                                (configured={{ starting_amps | round(0) }} A,
+                                safe target={{ confirmed_target | round(0) }} A).
 
                   - choose:
                       - conditions:
