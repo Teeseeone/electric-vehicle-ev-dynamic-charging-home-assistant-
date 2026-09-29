@@ -19,10 +19,15 @@ blueprint:
     - Optional Home Assistant Logbook debug messages.
     - Optional location tracking; leave it empty to disable the location check.
 
-    ### Sensor priority
-    When configured, local charger sensors are preferred for fast charger status and measured
-    power/current. Tesla Fleet remains the command path for starting/stopping charging and
-    setting charge current.
+    ### CAR vs CHARGER inputs
+    Inputs are labelled so it is clear where the entity should come from:
+
+    - **[CAR]** = vehicle entity, normally Tesla Fleet.
+    - **[CHARGER]** = local wall charger entity, for example Tesla Wall Connector.
+    - **[HOUSE]** = whole-house power meter, for example Tibber Pulse.
+
+    Local CHARGER sensors are preferred for fast status and measured power/current.
+    CAR entities remain the command path for starting/stopping charging and setting current.
 
     Existing `select`-based charger controls remain supported.
 
@@ -44,30 +49,31 @@ blueprint:
               value: /5
 
     device_tracker:
-      name: Car/Person Location Tracker (Optional)
-      description: Optional location check. Leave empty to allow charging control regardless of tracker state.
+      name: "[CAR/PERSON] Location Tracker (Optional)"
+      description: "CAR/PERSON sensor. Optional location check. Leave empty to allow charging control regardless of tracker state."
       default: ""
       selector:
         entity:
           domain: device_tracker
 
     sensor_charging:
-      name: EV Charging State Sensor
+      name: "[CAR] EV Charging State Sensor"
       description: >
-        Vehicle charging-state sensor. Used when a Local Charger Status Sensor is not
-        selected or is unavailable. Tesla Fleet examples include starting, charging,
-        stopped, complete, disconnected, and no_power.
+        CAR sensor, normally from Tesla Fleet. Select the vehicle's charging-state sensor.
+        It is used as a fallback when the local CHARGER status sensor is not configured
+        or is unavailable. Typical Tesla states include starting, charging, stopped,
+        complete, disconnected, and no_power.
       default: sensor.ev_charger_estado
       selector:
         entity:
           domain: sensor
 
     charger_toggle:
-      name: Charging Start/Stop Control
+      name: "[CAR] Charging Start/Stop Control"
       description: >
-        Entity used to start and stop charging. Supports select entities using
-        "Start charging" / "Stop charging" and switch entities where turn_on starts
-        charging and turn_off stops charging. Tesla Fleet charging switches are supported directly.
+        CAR control, normally from Tesla Fleet. Select the vehicle's charge start/stop
+        entity. Supports select entities using "Start charging" / "Stop charging" and
+        switch entities where turn_on starts charging and turn_off stops charging.
       default: select.ev_charger_toggle_charging
       selector:
         entity:
@@ -76,8 +82,8 @@ blueprint:
             - switch
 
     sensor_house_power:
-      name: Whole-House Power Sensor
-      description: Live total household power draw in watts. A fast-updating sensor such as Tibber Pulse is recommended.
+      name: "[HOUSE] Whole-House Power Sensor"
+      description: "HOUSE sensor. Select total household power draw in watts. A fast-updating source such as Tibber Pulse is recommended."
       default: sensor.shellyemg3_8cbfea96acd8_em1_power
       selector:
         entity:
@@ -85,11 +91,11 @@ blueprint:
           device_class: power
 
     charger_power_sensor:
-      name: Actual Charger Power Sensor (Optional)
+      name: "[CHARGER] Actual Power Sensor (Optional)"
       description: >
-        Measured charger power in watts. When available, this is used instead of estimating
-        the charger's current power draw. Recommended for local charger integrations such
-        as Tesla Wall Connector. Leave empty to use the supply calculation as a fallback.
+        CHARGER sensor, normally from the local wall charger integration. Select measured
+        charger power in watts, for example Tesla Wall Connector total power / Billader.
+        Leave empty to estimate charger power from the selected electrical supply.
       default: ""
       selector:
         entity:
@@ -97,12 +103,12 @@ blueprint:
           device_class: power
 
     charger_current_sensor:
-      name: Actual Charger Current Sensor (Optional)
+      name: "[CHARGER] Actual Current Sensor (Optional)"
       description: >
-        Measured charger current in amps. When both charger power and charger current are
-        valid and above zero, the blueprint calculates real watts-per-amp (W/A) and uses
-        that value for target-current calculations. Leave empty to use the selected
-        electrical supply as the fallback.
+        CHARGER sensor, normally from the local wall charger integration. Select measured
+        charger current in amps, for example Tesla Wall Connector Vehicle current. When
+        both CHARGER power and current are valid, measured W/A is used for target-current
+        calculations. Leave empty to use the selected electrical supply as fallback.
       default: ""
       selector:
         entity:
@@ -110,34 +116,35 @@ blueprint:
           device_class: current
 
     charger_status_sensor:
-      name: Local Charger Status Sensor (Optional)
+      name: "[CHARGER] Local Status Sensor (Optional)"
       description: >
-        Local charger status sensor. When available, it is preferred over slower vehicle
-        telemetry for charging-state decisions. For Tesla Wall Connector, use the local
-        Status entity, for example sensor.tesla_wall_connector_status.
+        CHARGER sensor from the local wall charger integration. This is preferred over
+        slower CAR telemetry for charging-state decisions. For Tesla Wall Connector use
+        sensor.tesla_wall_connector_status.
       default: ""
       selector:
         entity:
           domain: sensor
 
     charger_vehicle_connected_sensor:
-      name: Charger Vehicle Connected Sensor (Optional)
+      name: "[CHARGER] Vehicle Connected Sensor (Optional)"
       description: >
-        Local charger binary sensor that confirms a vehicle is physically connected.
-        For Tesla Wall Connector, use binary_sensor.tesla_wall_connector_vehicle_connected.
-        If configured and not ON, the automation will not send charging commands.
+        CHARGER sensor. Confirms that some vehicle is physically connected to this wall
+        charger. For Tesla Wall Connector use
+        binary_sensor.tesla_wall_connector_vehicle_connected. If configured and not ON,
+        the automation sends no charging commands.
       default: ""
       selector:
         entity:
           domain: binary_sensor
 
     target_ev_charge_cable_sensor:
-      name: Target EV Charge Cable Sensor (Optional)
+      name: "[CAR] Target EV Charge Cable Sensor (Optional)"
       description: >
-        Vehicle-specific binary sensor that confirms the EV controlled by this automation
-        has its charge cable connected. For Tesla Fleet, select the Model Y charge-cable
-        binary sensor. If configured and not ON, the automation will not send charging
-        commands. This is strongly recommended when the charger may be shared by multiple EVs.
+        CAR sensor, normally from Tesla Fleet. Select the charge-cable sensor belonging to
+        the specific EV controlled by this automation. If configured and not ON, no charging
+        commands are sent to that EV. Strongly recommended when the CHARGER may be shared
+        by multiple vehicles.
       default: ""
       selector:
         entity:
@@ -154,8 +161,8 @@ blueprint:
           step: 100
 
     charging_current:
-      name: Charging Current Control
-      description: Number entity used to request the EV charging current in amps.
+      name: "[CAR] Charging Current Control"
+      description: "CAR control, normally from Tesla Fleet. Select the vehicle number entity used to request charging current in amps."
       default: number.ev_charger_set_charge_current
       selector:
         entity:
