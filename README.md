@@ -37,6 +37,8 @@ Tesla Fleet commands already wake the vehicle automatically when required.
 
 Charging current can increase and decrease using different step sizes and delays.
 
+v2.4 runs the automation in **single** mode so a new scheduled trigger cannot cancel an active ramp. While ramping up, every increase step waits for the configured delay and then re-reads whole-house power plus charger power/current before deciding whether another increase is still safe.
+
 Default values:
 
 | Setting | Default |
@@ -143,7 +145,7 @@ Default:
 300 seconds / 5 minutes
 ```
 
-Before restarting, the blueprint waits for the configured stability period and checks household power again.
+Before restarting, the blueprint waits for the configured stability period and checks household power again. After charging starts, every ramp-up step also uses fresh house/charger readings before increasing current.
 
 ### Debug logging
 
@@ -244,6 +246,8 @@ The resulting target current is:
 - capped at **Maximum Charging Current**
 - changed to 0 A when below **Minimum Charging Current**
 - otherwise rounded down to a whole amp
+
+During ramp-up, this calculation is repeated before **every** increase step. If the fresh target falls, the blueprint stops increasing and can reverse into the configured ramp-down behavior.
 
 ---
 
@@ -362,7 +366,8 @@ Before tagging v2.4, verify:
 - starting current is applied correctly
 - measured charger W/A is shown in debug logs when both sensors are configured
 - whole-house load stays near/below Maximum Grid Draw
-- ramp-up behaves as configured
+- ramp-up behaves as configured without being interrupted by the one-minute trigger
+- each ramp-up step re-checks fresh Tibber/house and charger measurements
 - ramp-down reacts correctly to a sudden household load
 - charging stops below the configured minimum
 - restart lockout lasts the configured time
@@ -391,6 +396,8 @@ Before tagging v2.4, verify:
 - Added explicit start-command logging and documented Tesla Fleet automatic wake behavior
 - Added shared-charger safety gates using local vehicle-connected and target-EV charge-cable sensors
 - Labelled blueprint entity inputs as **[CAR]**, **[CHARGER]**, **[HOUSE]**, or **[CAR/PERSON]** so the intended source is obvious
+- Changed automation execution from `restart` to `single` so scheduled triggers cannot cancel an active ramp
+- Added fresh whole-house and charger re-checks before every ramp-up step; ramp-up halts or reverses if the safe target drops
 
 ### v2.3
 
