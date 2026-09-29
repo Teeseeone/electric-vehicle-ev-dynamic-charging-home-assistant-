@@ -182,6 +182,8 @@ For a Tesla Fleet + Tesla Wall Connector installation, the recommended inputs ar
 | Actual Charger Power Sensor | Tesla Wall Connector total power / `Billader` |
 | Actual Charger Current Sensor | Tesla Wall Connector `Vehicle current` |
 | Local Charger Status Sensor | `sensor.tesla_wall_connector_status` |
+| Charger Vehicle Connected Sensor | `binary_sensor.tesla_wall_connector_vehicle_connected` |
+| Target EV Charge Cable Sensor | Tesla Fleet Model Y charge-cable binary sensor |
 | Charging Current Control | Tesla Fleet charging-current number |
 | Charging Supply | Match the electrical installation |
 
@@ -338,7 +340,9 @@ The location tracker is optional.
 - Tesla Fleet is used for commands; local Wall Connector sensors are preferable for fast charger status and measured power/current.
 - Very low requested currents may not correspond to a physically usable charging current on every EV/charger.
 - The blueprint does not change the vehicle charge limit.
-- A Wall Connector can detect that *a* vehicle is connected, but local Wall Connector telemetry does not identify which vehicle it is. Be cautious with automatic Tesla-specific commands if the charger is shared by multiple vehicles.
+- For shared chargers, configure both **Charger Vehicle Connected Sensor** and **Target EV Charge Cable Sensor**. If either configured gate is not ON, the blueprint sends no EV charging commands.
+- The target-EV cable sensor comes from vehicle telemetry and may update more slowly than local Wall Connector data, so this reduces shared-charger risk but cannot cryptographically identify the vehicle connected to the Wall Connector.
+- Reading these Home Assistant sensor states does not itself send extra Tesla commands; Tesla Fleet commands are only sent when the blueprint changes charging current or start/stop state.
 - Keep Debug Logging enabled during initial testing.
 
 ---
@@ -378,6 +382,7 @@ Before tagging v2.4, verify:
 - Fixed the optional location tracker when left empty
 - Added detailed optional Logbook debugging
 - Added explicit start-command logging and documented Tesla Fleet automatic wake behavior
+- Added shared-charger safety gates using local vehicle-connected and target-EV charge-cable sensors
 
 ### v2.3
 
