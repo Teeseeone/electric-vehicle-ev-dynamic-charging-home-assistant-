@@ -265,6 +265,14 @@ no_power
 
 Entity names vary between Home Assistant installations.
 
+For faster and more reliable control, v2.4 can also use a **Local Charger Status Sensor**. With the Tesla Wall Connector integration, use the local status entity, for example:
+
+```text
+sensor.tesla_wall_connector_status
+```
+
+When configured and available, the local charger status is preferred over the slower Tesla Fleet charging-state sensor for control decisions.
+
 The blueprint does **not** modify `number.model_y_charge_limit`. Tesla's configured battery charge limit remains under Tesla/Home Assistant control.
 
 ---
@@ -275,6 +283,7 @@ The blueprint expects:
 
 - whole-house power sensor in watts
 - optional actual charger-power sensor in watts
+- optional local charger-status sensor
 - charging-current `number` entity
 - charging start/stop `switch` or compatible `select`
 - charging-state `sensor`
@@ -323,7 +332,7 @@ Ramp-down delay:           10 s
 Ramp-up deadband:          1 A
 Ramp-up stability time:    30 s
 
-Minimum charging current:  5 A
+Minimum charging current:  1 A (requested minimum; EV/charger may enforce a higher physical minimum)
 Maximum grid draw:          9000 W
 
 Restart delay:             300 s / 5 min
@@ -359,6 +368,8 @@ Three-phase 400 V
 - Added 5-minute default restart lockout
 - Added safe minimum-current restart behavior
 - Added optional measured charger-power input with electrical-supply fallback
+- Added optional local charger-status input, preferred over slow vehicle telemetry when available
+- Lowered the configurable requested minimum charging current to 1 A
 - Added optional Home Assistant Logbook debug output
 - Preserved v2.3 switch/select control and independent ramp settings
 
