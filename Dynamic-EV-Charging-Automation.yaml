@@ -14,7 +14,8 @@ blueprint:
     - Optional target-EV charge-cable safety gate for shared chargers.
     - Measured **W/A calibration** when both charger power and charger current are available.
     - Configurable starting charging current.
-    - Ramp-up deadband and stability check.
+    - Ramp-up deadband, initial stability check, and fresh power checks before every increase step.
+    - Single-run control so scheduled triggers cannot interrupt an active ramp.
     - Five-minute restart lockout by default.
     - Optional Home Assistant Logbook debug messages.
     - Optional location tracking; leave it empty to disable the location check.
@@ -275,8 +276,9 @@ blueprint:
     ramp_up_stability_seconds:
       name: Ramp-Up Stability Time (seconds)
       description: >
-        Before increasing current, wait this long and then recalculate using a fresh
-        whole-house power value. Ramp-up continues only if sufficient spare power remains.
+        Before ramp-up begins, wait this long and recalculate using a fresh whole-house
+        power value. During ramp-up, the blueprint then re-reads house power and charger
+        measurements before every increase step.
       default: 30
       selector:
         number:
@@ -687,24 +689,223 @@ action:
                             {{ ramp_up_stability_seconds | int }} s stability check.
               - stop: Spare power was not stable enough to restart
 
-          # Ramp from the safe minimum toward the confirmed target.
+          # Ramp from the configured start current. Before every increase step,
+          # re-read Tibber/house power and local charger measurements.
           - repeat:
               while:
                 - condition: template
                   value_template: >-
-                    {{ (states(charging_current_entity) | float(0)) < (confirmed_target | float(0)) }}
+                    {{ (states(charging_current_entity) | float(0)) < (max_amps | float(0)) }}
               sequence:
-                - variables:
-                    current_amps_before_step: "{{ states(charging_current_entity) | float(0) }}"
-                - action: number.set_value
-                  target:
-                    entity_id: !input charging_current
-                  data:
-                    value: >-
-                      {{ [current_amps_before_step + (increase_step_amps | float),
-                          confirmed_target | float] | min }}
                 - delay:
                     seconds: "{{ increase_delay_seconds | int }}"
+
+                - variables:
+                    step_current: "{{ states(charging_current_entity) | float(0) }}"
+                    step_total_consumption: "{{ states(sensor_house_power_entity) | float(0) }}"
+                    step_measured_charger_power: >-
+                      {% if charger_power_sensor_input not in [none, '', 'none'] %}
+                        {{ states(charger_power_sensor_input) | float(0) }}
+                      {% else %}
+                        0
+                      {% endif %}
+                    step_measured_charger_current: >-
+                      {% if charger_current_sensor_input not in [none, '', 'none'] %}
+                        {{ states(charger_current_sensor_input) | float(0) }}
+                      {% else %}
+                        0
+                      {% endif %}
+                    step_watts_per_amp: >-
+                      {% if (step_measured_charger_power | float(0)) > 0
+                            and (step_measured_charger_current | float(0)) > 0 %}
+                        {{ (step_measured_charger_power | float(0))
+                           / (step_measured_charger_current | float(0)) }}
+                      {% else %}
+                        {{ theoretical_watts_per_amp | float(230) }}
+                      {% endif %}
+                    step_watts_per_amp_source: >-
+                      {% if (step_measured_charger_power | float(0)) > 0
+                            and (step_measured_charger_current | float(0)) > 0 %}
+                        measured
+                      {% else %}
+                        theoretical
+                      {% endif %}
+                    step_charging_state: >-
+                      {% if charger_status_sensor_input not in [none, '', 'none']
+                            and states(charger_status_sensor_input) | lower
+                                not in ['unknown', 'unavailable', 'none', ''] %}
+                        {{ states(charger_status_sensor_input) | lower }}
+                      {% else %}
+                        {{ states(sensor_charging_entity) | lower }}
+                      {% endif %}
+                    step_charger_consumption: >-
+                      {% if (step_measured_charger_power | float(0)) > 0 %}
+                        {{ step_measured_charger_power | float(0) }}
+                      {% elif step_charging_state in ['charging', 'charging_reduced', 'starting'] %}
+                        {{ (step_current | float(0)) * (step_watts_per_amp | float(230)) }}
+                      {% else %}
+                        0
+                      {% endif %}
+                    step_free_power: >-
+                      {{ [0, (active_grid_limit | float(0))
+                            - (step_total_consumption | float(0))
+                            + (step_charger_consumption | float(0))] | max }}
+                    step_target: >-
+                      {% set raw_amps = (step_free_power | float(0))
+                                        / (step_watts_per_amp | float(230)) %}
+                      {% if raw_amps > (max_amps | float) %}
+                        {{ max_amps | float }}
+                      {% elif raw_amps < (min_amps | float) %}
+                        0
+                      {% else %}
+                        {{ raw_amps | int }}
+                      {% endif %}
+                    step_charger_vehicle_connected_ok: >-
+                      {{ charger_vehicle_connected_sensor_input in [none, '', 'none']
+                         or is_state(charger_vehicle_connected_sensor_input, 'on') }}
+                    step_target_ev_charge_cable_ok: >-
+                      {{ target_ev_charge_cable_sensor_input in [none, '', 'none']
+                         or is_state(target_ev_charge_cable_sensor_input, 'on') }}
+
+                - choose:
+                    - conditions:
+                        - condition: template
+                          value_template: >-
+                            {{ not step_charger_vehicle_connected_ok
+                               or not step_target_ev_charge_cable_ok
+                               or step_charging_state not in eligible_states }}
+                      sequence:
+                        - choose:
+                            - conditions:
+                                - condition: template
+                                  value_template: "{{ debug_logging }}"
+                              sequence:
+                                - action: logbook.log
+                                  data:
+                                    name: Dynamic EV Charging v2.4
+                                    entity_id: !input charging_current
+                                    message: >-
+                                      HOLD RAMP: connection/state safety check failed;
+                                      state={{ step_charging_state }}. No further commands sent.
+                        - stop: Ramp-up safety gate failed
+
+                    - conditions:
+                        - condition: template
+                          value_template: "{{ (step_target | float(0)) < (min_amps | float(0)) }}"
+                      sequence:
+                        - choose:
+                            - conditions:
+                                - condition: template
+                                  value_template: "{{ charger_toggle_entity.startswith('switch.') }}"
+                              sequence:
+                                - action: switch.turn_off
+                                  target:
+                                    entity_id: !input charger_toggle
+                          default:
+                            - action: select.select_option
+                              target:
+                                entity_id: !input charger_toggle
+                              data:
+                                option: Stop charging
+                        - choose:
+                            - conditions:
+                                - condition: template
+                                  value_template: "{{ debug_logging }}"
+                              sequence:
+                                - action: logbook.log
+                                  data:
+                                    name: Dynamic EV Charging v2.4
+                                    entity_id: !input charging_current
+                                    message: >-
+                                      STOP DURING RAMP: fresh house={{ step_total_consumption | round(0) }} W,
+                                      target=0 A. Charging stopped.
+                        - stop: Insufficient power during ramp-up
+
+                    - conditions:
+                        - condition: template
+                          value_template: >-
+                            {{ (step_target | float(0)) < (step_current | float(0)) }}
+                      sequence:
+                        - repeat:
+                            while:
+                              - condition: template
+                                value_template: >-
+                                  {{ (states(charging_current_entity) | float(0))
+                                     > (step_target | float(0)) }}
+                            sequence:
+                              - variables:
+                                  ramp_down_current: "{{ states(charging_current_entity) | float(0) }}"
+                              - action: number.set_value
+                                target:
+                                  entity_id: !input charging_current
+                                data:
+                                  value: >-
+                                    {{ [ramp_down_current - (decrease_step_amps | float),
+                                        step_target | float] | max }}
+                              - delay:
+                                  seconds: "{{ decrease_delay_seconds | int }}"
+                        - choose:
+                            - conditions:
+                                - condition: template
+                                  value_template: "{{ debug_logging }}"
+                              sequence:
+                                - action: logbook.log
+                                  data:
+                                    name: Dynamic EV Charging v2.4
+                                    entity_id: !input charging_current
+                                    message: >-
+                                      RAMP REVERSED: fresh house={{ step_total_consumption | round(0) }} W,
+                                      fresh target={{ step_target | round(0) }} A.
+                        - stop: Fresh power reading requires ramp-down
+
+                    - conditions:
+                        - condition: template
+                          value_template: >-
+                            {{ (step_target | float(0)) <=
+                               ((step_current | float(0)) + (ramp_up_deadband_amps | float(0))) }}
+                      sequence:
+                        - choose:
+                            - conditions:
+                                - condition: template
+                                  value_template: "{{ debug_logging }}"
+                              sequence:
+                                - action: logbook.log
+                                  data:
+                                    name: Dynamic EV Charging v2.4
+                                    entity_id: !input charging_current
+                                    message: >-
+                                      HOLD RAMP: fresh house={{ step_total_consumption | round(0) }} W,
+                                      current={{ step_current | round(0) }} A,
+                                      target={{ step_target | round(0) }} A,
+                                      W/A={{ step_watts_per_amp | round(1) }}
+                                      ({{ step_watts_per_amp_source }}).
+                        - stop: Fresh target no longer requires ramp-up
+
+                  default:
+                    - action: number.set_value
+                      target:
+                        entity_id: !input charging_current
+                      data:
+                        value: >-
+                          {{ [step_current + (increase_step_amps | float),
+                              step_target | float,
+                              max_amps | float] | min }}
+                    - choose:
+                        - conditions:
+                            - condition: template
+                              value_template: "{{ debug_logging }}"
+                          sequence:
+                            - action: logbook.log
+                              data:
+                                name: Dynamic EV Charging v2.4
+                                entity_id: !input charging_current
+                                message: >-
+                                  RAMP UP STEP: house={{ step_total_consumption | round(0) }} W,
+                                  free={{ step_free_power | round(0) }} W,
+                                  current={{ step_current | round(0) }} A,
+                                  target={{ step_target | round(0) }} A,
+                                  W/A={{ step_watts_per_amp | round(1) }}
+                                  ({{ step_watts_per_amp_source }}).
 
           - stop: Restart sequence completed
 
@@ -816,23 +1017,223 @@ action:
               {{ (confirmed_target | float(0)) >
                  ((confirmed_current | float(0)) + (ramp_up_deadband_amps | float(0))) }}
         sequence:
+          # Keep one automation run in control of the ramp. Before every increase,
+          # wait the configured step delay and recalculate from fresh sensor values.
           - repeat:
               while:
                 - condition: template
                   value_template: >-
-                    {{ (states(charging_current_entity) | float(0)) < (confirmed_target | float(0)) }}
+                    {{ (states(charging_current_entity) | float(0)) < (max_amps | float(0)) }}
               sequence:
-                - variables:
-                    current_amps_before_step: "{{ states(charging_current_entity) | float(0) }}"
-                - action: number.set_value
-                  target:
-                    entity_id: !input charging_current
-                  data:
-                    value: >-
-                      {{ [current_amps_before_step + (increase_step_amps | float),
-                          confirmed_target | float] | min }}
                 - delay:
                     seconds: "{{ increase_delay_seconds | int }}"
+
+                - variables:
+                    step_current: "{{ states(charging_current_entity) | float(0) }}"
+                    step_total_consumption: "{{ states(sensor_house_power_entity) | float(0) }}"
+                    step_measured_charger_power: >-
+                      {% if charger_power_sensor_input not in [none, '', 'none'] %}
+                        {{ states(charger_power_sensor_input) | float(0) }}
+                      {% else %}
+                        0
+                      {% endif %}
+                    step_measured_charger_current: >-
+                      {% if charger_current_sensor_input not in [none, '', 'none'] %}
+                        {{ states(charger_current_sensor_input) | float(0) }}
+                      {% else %}
+                        0
+                      {% endif %}
+                    step_watts_per_amp: >-
+                      {% if (step_measured_charger_power | float(0)) > 0
+                            and (step_measured_charger_current | float(0)) > 0 %}
+                        {{ (step_measured_charger_power | float(0))
+                           / (step_measured_charger_current | float(0)) }}
+                      {% else %}
+                        {{ theoretical_watts_per_amp | float(230) }}
+                      {% endif %}
+                    step_watts_per_amp_source: >-
+                      {% if (step_measured_charger_power | float(0)) > 0
+                            and (step_measured_charger_current | float(0)) > 0 %}
+                        measured
+                      {% else %}
+                        theoretical
+                      {% endif %}
+                    step_charging_state: >-
+                      {% if charger_status_sensor_input not in [none, '', 'none']
+                            and states(charger_status_sensor_input) | lower
+                                not in ['unknown', 'unavailable', 'none', ''] %}
+                        {{ states(charger_status_sensor_input) | lower }}
+                      {% else %}
+                        {{ states(sensor_charging_entity) | lower }}
+                      {% endif %}
+                    step_charger_consumption: >-
+                      {% if (step_measured_charger_power | float(0)) > 0 %}
+                        {{ step_measured_charger_power | float(0) }}
+                      {% elif step_charging_state in ['charging', 'charging_reduced', 'starting'] %}
+                        {{ (step_current | float(0)) * (step_watts_per_amp | float(230)) }}
+                      {% else %}
+                        0
+                      {% endif %}
+                    step_free_power: >-
+                      {{ [0, (active_grid_limit | float(0))
+                            - (step_total_consumption | float(0))
+                            + (step_charger_consumption | float(0))] | max }}
+                    step_target: >-
+                      {% set raw_amps = (step_free_power | float(0))
+                                        / (step_watts_per_amp | float(230)) %}
+                      {% if raw_amps > (max_amps | float) %}
+                        {{ max_amps | float }}
+                      {% elif raw_amps < (min_amps | float) %}
+                        0
+                      {% else %}
+                        {{ raw_amps | int }}
+                      {% endif %}
+                    step_charger_vehicle_connected_ok: >-
+                      {{ charger_vehicle_connected_sensor_input in [none, '', 'none']
+                         or is_state(charger_vehicle_connected_sensor_input, 'on') }}
+                    step_target_ev_charge_cable_ok: >-
+                      {{ target_ev_charge_cable_sensor_input in [none, '', 'none']
+                         or is_state(target_ev_charge_cable_sensor_input, 'on') }}
+
+                - choose:
+                    - conditions:
+                        - condition: template
+                          value_template: >-
+                            {{ not step_charger_vehicle_connected_ok
+                               or not step_target_ev_charge_cable_ok
+                               or step_charging_state not in eligible_states }}
+                      sequence:
+                        - choose:
+                            - conditions:
+                                - condition: template
+                                  value_template: "{{ debug_logging }}"
+                              sequence:
+                                - action: logbook.log
+                                  data:
+                                    name: Dynamic EV Charging v2.4
+                                    entity_id: !input charging_current
+                                    message: >-
+                                      HOLD RAMP: connection/state safety check failed;
+                                      state={{ step_charging_state }}. No further commands sent.
+                        - stop: Ramp-up safety gate failed
+
+                    - conditions:
+                        - condition: template
+                          value_template: "{{ (step_target | float(0)) < (min_amps | float(0)) }}"
+                      sequence:
+                        - choose:
+                            - conditions:
+                                - condition: template
+                                  value_template: "{{ charger_toggle_entity.startswith('switch.') }}"
+                              sequence:
+                                - action: switch.turn_off
+                                  target:
+                                    entity_id: !input charger_toggle
+                          default:
+                            - action: select.select_option
+                              target:
+                                entity_id: !input charger_toggle
+                              data:
+                                option: Stop charging
+                        - choose:
+                            - conditions:
+                                - condition: template
+                                  value_template: "{{ debug_logging }}"
+                              sequence:
+                                - action: logbook.log
+                                  data:
+                                    name: Dynamic EV Charging v2.4
+                                    entity_id: !input charging_current
+                                    message: >-
+                                      STOP DURING RAMP: fresh house={{ step_total_consumption | round(0) }} W,
+                                      target=0 A. Charging stopped.
+                        - stop: Insufficient power during ramp-up
+
+                    - conditions:
+                        - condition: template
+                          value_template: >-
+                            {{ (step_target | float(0)) < (step_current | float(0)) }}
+                      sequence:
+                        - repeat:
+                            while:
+                              - condition: template
+                                value_template: >-
+                                  {{ (states(charging_current_entity) | float(0))
+                                     > (step_target | float(0)) }}
+                            sequence:
+                              - variables:
+                                  ramp_down_current: "{{ states(charging_current_entity) | float(0) }}"
+                              - action: number.set_value
+                                target:
+                                  entity_id: !input charging_current
+                                data:
+                                  value: >-
+                                    {{ [ramp_down_current - (decrease_step_amps | float),
+                                        step_target | float] | max }}
+                              - delay:
+                                  seconds: "{{ decrease_delay_seconds | int }}"
+                        - choose:
+                            - conditions:
+                                - condition: template
+                                  value_template: "{{ debug_logging }}"
+                              sequence:
+                                - action: logbook.log
+                                  data:
+                                    name: Dynamic EV Charging v2.4
+                                    entity_id: !input charging_current
+                                    message: >-
+                                      RAMP REVERSED: fresh house={{ step_total_consumption | round(0) }} W,
+                                      fresh target={{ step_target | round(0) }} A.
+                        - stop: Fresh power reading requires ramp-down
+
+                    - conditions:
+                        - condition: template
+                          value_template: >-
+                            {{ (step_target | float(0)) <=
+                               ((step_current | float(0)) + (ramp_up_deadband_amps | float(0))) }}
+                      sequence:
+                        - choose:
+                            - conditions:
+                                - condition: template
+                                  value_template: "{{ debug_logging }}"
+                              sequence:
+                                - action: logbook.log
+                                  data:
+                                    name: Dynamic EV Charging v2.4
+                                    entity_id: !input charging_current
+                                    message: >-
+                                      HOLD RAMP: fresh house={{ step_total_consumption | round(0) }} W,
+                                      current={{ step_current | round(0) }} A,
+                                      target={{ step_target | round(0) }} A,
+                                      W/A={{ step_watts_per_amp | round(1) }}
+                                      ({{ step_watts_per_amp_source }}).
+                        - stop: Fresh target no longer requires ramp-up
+
+                  default:
+                    - action: number.set_value
+                      target:
+                        entity_id: !input charging_current
+                      data:
+                        value: >-
+                          {{ [step_current + (increase_step_amps | float),
+                              step_target | float,
+                              max_amps | float] | min }}
+                    - choose:
+                        - conditions:
+                            - condition: template
+                              value_template: "{{ debug_logging }}"
+                          sequence:
+                            - action: logbook.log
+                              data:
+                                name: Dynamic EV Charging v2.4
+                                entity_id: !input charging_current
+                                message: >-
+                                  RAMP UP STEP: house={{ step_total_consumption | round(0) }} W,
+                                  free={{ step_free_power | round(0) }} W,
+                                  current={{ step_current | round(0) }} A,
+                                  target={{ step_target | round(0) }} A,
+                                  W/A={{ step_watts_per_amp | round(1) }}
+                                  ({{ step_watts_per_amp_source }}).
 
           - choose:
               - conditions:
@@ -844,10 +1245,8 @@ action:
                       name: Dynamic EV Charging v2.4
                       entity_id: !input charging_current
                       message: >-
-                        RAMP UP: fresh house={{ confirmed_total_consumption | round(0) }} W,
-                        free={{ confirmed_free_power | round(0) }} W,
-                        W/A={{ watts_per_amp | round(1) }} ({{ watts_per_amp_source }}),
-                        confirmed target={{ confirmed_target | round(0) }} A.
+                        RAMP UP COMPLETE: reached Maximum Charging Current
+                        ({{ max_amps | round(0) }} A).
     default:
       - choose:
           - conditions:
@@ -862,4 +1261,6 @@ action:
                     HOLD AFTER STABILITY CHECK: fresh target={{ confirmed_target | round(0) }} A,
                     current={{ confirmed_current | round(0) }} A.
 
-mode: restart
+mode: single
+max_exceeded: silent
+
