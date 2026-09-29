@@ -172,19 +172,26 @@ Requested start current=6 A (configured=6 A, safe target=14 A).
 
 ## Recommended Tesla setup
 
-For a Tesla Fleet + Tesla Wall Connector installation, the recommended inputs are:
+The blueprint labels entity inputs by source:
 
-| Blueprint input | Recommended entity/source |
+- **[CAR]** = entity belonging to the EV, normally from Tesla Fleet
+- **[CHARGER]** = entity belonging to the local wall charger, such as Tesla Wall Connector
+- **[HOUSE]** = whole-house power meter, such as Tibber Pulse
+- **[CAR/PERSON]** = optional location tracker
+
+For a Tesla Fleet + Tesla Wall Connector installation, use:
+
+| Blueprint input | Use this source |
 | --- | --- |
-| EV Charging State Sensor | Tesla Fleet charging-state sensor |
-| Charging Start/Stop Control | Tesla Fleet charge switch |
-| Whole-House Power Sensor | Tibber Pulse or another fast total-power sensor |
-| Actual Charger Power Sensor | Tesla Wall Connector total power / `Billader` |
-| Actual Charger Current Sensor | Tesla Wall Connector `Vehicle current` |
-| Local Charger Status Sensor | `sensor.tesla_wall_connector_status` |
-| Charger Vehicle Connected Sensor | `binary_sensor.tesla_wall_connector_vehicle_connected` |
-| Target EV Charge Cable Sensor | Tesla Fleet Model Y charge-cable binary sensor |
-| Charging Current Control | Tesla Fleet charging-current number |
+| **[CAR] EV Charging State Sensor** | Tesla Fleet charging-state sensor |
+| **[CAR] Charging Start/Stop Control** | Tesla Fleet charge switch |
+| **[HOUSE] Whole-House Power Sensor** | Tibber Pulse or another fast total-power sensor |
+| **[CHARGER] Actual Power Sensor** | Tesla Wall Connector total power / `Billader` |
+| **[CHARGER] Actual Current Sensor** | Tesla Wall Connector `Vehicle current` |
+| **[CHARGER] Local Status Sensor** | `sensor.tesla_wall_connector_status` |
+| **[CHARGER] Vehicle Connected Sensor** | `binary_sensor.tesla_wall_connector_vehicle_connected` |
+| **[CAR] Target EV Charge Cable Sensor** | Tesla Fleet Model Y charge-cable binary sensor |
+| **[CAR] Charging Current Control** | Tesla Fleet charging-current number |
 | Charging Supply | Match the electrical installation |
 
 For a Norwegian 230 V IT installation with three-phase EV charging, select:
@@ -337,7 +344,7 @@ The location tracker is optional.
 ## Important notes
 
 - **Maximum Grid Draw refers to total household load, not charger power.**
-- Tesla Fleet is used for commands; local Wall Connector sensors are preferable for fast charger status and measured power/current.
+- **CAR/Tesla Fleet entities are used for vehicle-specific commands. CHARGER/Wall Connector entities are used for fast local status and measured power/current.**
 - Very low requested currents may not correspond to a physically usable charging current on every EV/charger.
 - The blueprint does not change the vehicle charge limit.
 - For shared chargers, configure both **Charger Vehicle Connected Sensor** and **Target EV Charge Cable Sensor**. If either configured gate is not ON, the blueprint sends no EV charging commands.
@@ -383,6 +390,7 @@ Before tagging v2.4, verify:
 - Added detailed optional Logbook debugging
 - Added explicit start-command logging and documented Tesla Fleet automatic wake behavior
 - Added shared-charger safety gates using local vehicle-connected and target-EV charge-cable sensors
+- Labelled blueprint entity inputs as **[CAR]**, **[CHARGER]**, **[HOUSE]**, or **[CAR/PERSON]** so the intended source is obvious
 
 ### v2.3
 
