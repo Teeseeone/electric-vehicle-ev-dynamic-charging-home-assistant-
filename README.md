@@ -186,6 +186,22 @@ This is intended to reduce repeated stop/start cycling.
 
 If the calculated target is below **Minimum amps**, the target becomes 0 A and the blueprint uses the configured charging start/stop entity instead of trying to request an invalid low charging current.
 
+## Measured charger W/A calibration
+
+For chargers that expose both real power and real current, v2.4 can calibrate the target-current calculation from live measurements.
+
+For a Tesla Wall Connector, use:
+
+```text
+Actual Charger Power Sensor:
+<Wall Connector total power / Billader>
+
+Actual Charger Current Sensor:
+<Wall Connector Vehicle current>
+```
+
+When both values are above zero, the blueprint uses measured `W / A`. If either value is missing or zero, it automatically falls back to the selected 230 V / 400 V supply formula.
+
 ## Starting charging current
 
 v2.4 has a separate **Starting charging amps** setting.
@@ -295,6 +311,7 @@ The blueprint expects:
 
 - whole-house power sensor in watts
 - optional actual charger-power sensor in watts
+- optional actual charger-current sensor in amps
 - optional local charger-status sensor
 - charging-current `number` entity
 - charging start/stop `switch` or compatible `select`
@@ -310,11 +327,17 @@ The blueprint expects:
 
 The blueprint uses one **Maximum Grid Draw (W)** limit at all times. There are no separate day/night limits or time schedules in v2.4.
 
-You can optionally select an **Actual Charger Power Sensor**. When configured, the blueprint uses that measured charger wattage when separating EV load from the total house load. For a Tesla Wall Connector, select the local power sensor that reports the charger's current watt draw.
+You can optionally select an **Actual Charger Power Sensor**. When configured, the blueprint uses that measured charger wattage when separating EV load from the total house load.
 
-If no charger-power sensor is selected, the blueprint falls back to estimating charger power from the charging-current setting and selected electrical supply.
+You can also select an **Actual Charger Current Sensor**. When both measured charger watts and measured charger amps are available and above zero, v2.4 derives the real conversion factor:
 
-The electrical supply presets are still used to convert available watts into a charging-current target.
+```text
+watts per amp = actual charger watts / actual charger amps
+```
+
+That measured W/A value is then used to convert the available charging-power budget back into a target current. This is preferred over the theoretical supply formula whenever both measurements are valid.
+
+If measured power/current are not available, the selected electrical supply preset remains the fallback.
 
 The resulting target current is:
 
@@ -381,7 +404,9 @@ Three-phase 400 V
 - Added 5-minute default restart lockout
 - Added safe minimum-current restart behavior
 - Added configurable starting charging current (default 6 A), clamped to the current safe target
-- Added optional measured charger-power input with electrical-supply fallback
+- Added optional measured charger-power input
+- Added optional measured charger-current input
+- Added real measured W/A calibration with automatic supply-formula fallback
 - Added optional local charger-status input, preferred over slow vehicle telemetry when available
 - Lowered the configurable requested minimum charging current to 1 A
 - Added optional Home Assistant Logbook debug output
