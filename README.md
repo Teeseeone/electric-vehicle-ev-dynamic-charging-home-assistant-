@@ -371,6 +371,7 @@ Three-phase 400 V
 - Added optional local charger-status input, preferred over slow vehicle telemetry when available
 - Lowered the configurable requested minimum charging current to 1 A
 - Added optional Home Assistant Logbook debug output
+- Added a clear `START COMMAND SENT` debug entry; Tesla Fleet commands already wake the vehicle automatically when required
 - Preserved v2.3 switch/select control and independent ramp settings
 
 ## v2.3
