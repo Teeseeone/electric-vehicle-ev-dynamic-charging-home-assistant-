@@ -94,6 +94,18 @@ blueprint:
           domain: sensor
           device_class: power
 
+    charger_status_sensor:
+      name: Local Charger Status Sensor (Optional)
+      description: >
+        Optional local charger status sensor. When selected, this is preferred over the
+        slower EV/Tesla Fleet charging-state sensor for dynamic-control decisions.
+        For a Tesla Wall Connector use the local Status entity, for example
+        sensor.tesla_wall_connector_status.
+      default: ""
+      selector:
+        entity:
+          domain: sensor
+
     max_grid_power:
       name: Maximum Grid Draw (W)
       description: Maximum total household power draw the automation should allow.
@@ -141,12 +153,13 @@ blueprint:
     min_amps:
       name: Minimum amps
       description: >
-        Minimum usable charging current. If calculated available power is below this value,
-        the automation stops charging instead of requesting a lower current.
-      default: 5
+        Minimum requested charging current. If calculated available power is below this
+        value, the automation stops charging instead of requesting a lower current.
+        The EV/charger may enforce a higher physical minimum than this setting.
+      default: 1
       selector:
         number:
-          min: 5
+          min: 1
           max: 32
           step: 1
 
@@ -264,6 +277,7 @@ action:
 
       sensor_house_power_entity: !input sensor_house_power
       charger_power_sensor_input: !input charger_power_sensor
+      charger_status_sensor_input: !input charger_status_sensor
       charging_current_entity: !input charging_current
       sensor_charging_entity: !input sensor_charging
       charger_toggle_entity: !input charger_toggle
@@ -279,7 +293,27 @@ action:
           {{ 400 * 1.7320508075688772 }}
         {% endif %}
 
-      charging_state: "{{ states(sensor_charging_entity) | lower }}"
+      fleet_charging_state: "{{ states(sensor_charging_entity) | lower }}"
+      local_charger_state: >-
+        {% if charger_status_sensor_input not in [none, '', 'none'] %}
+          {{ states(charger_status_sensor_input) | lower }}
+        {% else %}
+          unavailable
+        {% endif %}
+      charging_state: >-
+        {% if charger_status_sensor_input not in [none, '', 'none']
+              and local_charger_state not in ['unknown', 'unavailable', 'none', ''] %}
+          {{ local_charger_state }}
+        {% else %}
+          {{ fleet_charging_state }}
+        {% endif %}
+      status_entity_for_timing: >-
+        {% if charger_status_sensor_input not in [none, '', 'none']
+              and local_charger_state not in ['unknown', 'unavailable', 'none', ''] %}
+          {{ charger_status_sensor_input }}
+        {% else %}
+          {{ sensor_charging_entity }}
+        {% endif %}
       charging_current_value: "{{ states(charging_current_entity) | float(0) }}"
       total_consumption: "{{ states(sensor_house_power_entity) | float(0) }}"
 
@@ -301,7 +335,7 @@ action:
       charger_consumption: >-
         {% if charger_power_source == 'measured' %}
           {{ measured_charger_power | float(0) }}
-        {% elif charging_state in ['charging', 'starting'] %}
+        {% elif charging_state in ['charging', 'charging_reduced', 'starting'] %}
           {{ (charging_current_value | float(0)) * (watts_per_amp | float(230)) }}
         {% else %}
           0
@@ -321,17 +355,24 @@ action:
         {% endif %}
 
       stopped_seconds: >-
-        {% if charging_state in ['stopped', 'no_power'] %}
-          {{ as_timestamp(now()) - as_timestamp(states[sensor_charging_entity].last_changed) }}
+        {% if charger_toggle_entity.startswith('switch.') and is_state(charger_toggle_entity, 'off') %}
+          {{ as_timestamp(now()) - as_timestamp(states[charger_toggle_entity].last_changed) }}
+        {% elif charging_state in ['stopped', 'no_power', 'ready', 'connected', 'waiting_car', 'negotiating', 'plugged_in', 'waiting', 'waiting_for_authorization'] %}
+          {{ as_timestamp(now()) - as_timestamp(states[status_entity_for_timing].last_changed) }}
         {% else %}
           0
         {% endif %}
 
       eligible_states:
         - charging
+        - charging_reduced
         - starting
         - stopped
         - no_power
+        - ready
+        - connected
+        - waiting_car
+        - negotiating
         - plugged_in
         - waiting
         - waiting_for_authorization
@@ -398,13 +439,14 @@ action:
   - choose:
       - conditions:
           - condition: template
-            value_template: "{{ charging_state in ['stopped', 'no_power', 'plugged_in', 'waiting', 'waiting_for_authorization'] }}"
+            value_template: "{{ charging_state in ['stopped', 'no_power', 'ready', 'connected', 'waiting_car', 'negotiating', 'plugged_in', 'waiting', 'waiting_for_authorization'] }}"
         sequence:
           - choose:
               - conditions:
                   - condition: template
                     value_template: >-
-                      {{ charging_state in ['stopped', 'no_power']
+                      {{ (charger_toggle_entity.startswith('switch.') and is_state(charger_toggle_entity, 'off')
+                          or charging_state in ['stopped', 'no_power'])
                          and (stopped_seconds | float(0)) < (restart_delay_seconds | float(0)) }}
                 sequence:
                   - choose:
@@ -584,13 +626,19 @@ action:
 
   - variables:
       confirmed_total_consumption: "{{ states(sensor_house_power_entity) | float(0) }}"
-      confirmed_charging_state: "{{ states(sensor_charging_entity) | lower }}"
+      confirmed_charging_state: >-
+        {% if charger_status_sensor_input not in [none, '', 'none']
+              and states(charger_status_sensor_input) | lower not in ['unknown', 'unavailable', 'none', ''] %}
+          {{ states(charger_status_sensor_input) | lower }}
+        {% else %}
+          {{ states(sensor_charging_entity) | lower }}
+        {% endif %}
       confirmed_current: "{{ states(charging_current_entity) | float(0) }}"
       confirmed_charger_consumption: >-
         {% if charger_power_sensor_input not in [none, '', 'none']
               and (states(charger_power_sensor_input) | float(0)) > 0 %}
           {{ states(charger_power_sensor_input) | float(0) }}
-        {% elif confirmed_charging_state in ['charging', 'starting'] %}
+        {% elif confirmed_charging_state in ['charging', 'charging_reduced', 'starting'] %}
           {{ (confirmed_current | float(0)) * (watts_per_amp | float(230)) }}
         {% else %}
           0
