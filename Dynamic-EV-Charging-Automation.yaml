@@ -463,16 +463,19 @@ action:
                         target=0 A, state={{ charging_state }}.
           - stop: Not enough power to charge above the minimum current
 
-  # If Tesla/charger is stopped or has no power, enforce the restart lockout.
+  # Startable idle states enter the restart/start sequence.
+  # The 5-minute lockout applies specifically to stopped/no_power.
   - choose:
       - conditions:
           - condition: template
-            value_template: "{{ charging_state in ['stopped', 'no_power'] }}"
+            value_template: "{{ charging_state in ['stopped', 'no_power', 'plugged_in', 'waiting', 'waiting_for_authorization'] }}"
         sequence:
           - choose:
               - conditions:
                   - condition: template
-                    value_template: "{{ (stopped_seconds | float(0)) < (restart_delay_seconds | float(0)) }}"
+                    value_template: >-
+                      {{ charging_state in ['stopped', 'no_power']
+                         and (stopped_seconds | float(0)) < (restart_delay_seconds | float(0)) }}
                 sequence:
                   - choose:
                       - conditions:
