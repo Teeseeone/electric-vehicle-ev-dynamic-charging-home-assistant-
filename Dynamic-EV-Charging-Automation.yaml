@@ -190,7 +190,7 @@ blueprint:
     decrease_delay_seconds:
       name: Ramp-down delay (seconds)
       description: Delay between amperage reductions. A shorter delay sheds EV load faster.
-      default: 2
+      default: 10
       selector:
         number:
           min: 1
