@@ -229,13 +229,10 @@ variables:
   device_tracker_input: !input device_tracker
 
 condition:
-  - condition: or
-    conditions:
-      - condition: template
-        value_template: "{{ device_tracker_input in [none, '', 'none'] }}"
-      - condition: state
-        entity_id: !input device_tracker
-        state: home
+  - condition: template
+    value_template: >-
+      {{ device_tracker_input in [none, '', 'none']
+         or is_state(device_tracker_input, 'home') }}
 
 action:
   - variables:
