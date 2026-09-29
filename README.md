@@ -37,7 +37,7 @@ Tesla Fleet commands already wake the vehicle automatically when required.
 
 Charging current can increase and decrease using different step sizes and delays.
 
-v2.4 runs the automation in **single** mode so a new scheduled trigger cannot cancel an active ramp. While ramping up, every increase step waits for the configured delay and then re-reads whole-house power plus charger power/current before deciding whether another increase is still safe.
+v2.4 re-evaluates charging once per minute while idle. It runs in **single** mode so a scheduled one-minute trigger cannot cancel an active ramp. While ramping up, every increase step waits for the configured delay and then re-reads whole-house power plus charger power/current before deciding whether another increase is still safe.
 
 Default values:
 
@@ -254,8 +254,6 @@ During ramp-up, this calculation is repeated before **every** increase step. If 
 ## Suggested starting settings
 
 ```text
-Adjustment interval:        1 minute
-
 Maximum grid draw:          9000 W
 
 Minimum charging current:   1 A
@@ -366,6 +364,7 @@ Before tagging v2.4, verify:
 - starting current is applied correctly
 - measured charger W/A is shown in debug logs when both sensors are configured
 - whole-house load stays near/below Maximum Grid Draw
+- the fixed one-minute idle re-evaluation works as expected
 - ramp-up behaves as configured without being interrupted by the one-minute trigger
 - each ramp-up step re-checks fresh Tibber/house and charger measurements
 - ramp-down reacts correctly to a sudden household load
@@ -396,6 +395,7 @@ Before tagging v2.4, verify:
 - Added explicit start-command logging and documented Tesla Fleet automatic wake behavior
 - Added shared-charger safety gates using local vehicle-connected and target-EV charge-cable sensors
 - Labelled blueprint entity inputs as **[CAR]**, **[CHARGER]**, **[HOUSE]**, or **[CAR/PERSON]** so the intended source is obvious
+- Removed the 1/3/5-minute interval selector and standardized idle re-evaluation to once per minute
 - Changed automation execution from `restart` to `single` so scheduled triggers cannot cancel an active ramp
 - Added fresh whole-house and charger re-checks before every ramp-up step; ramp-up halts or reverses if the safe target drops
 
