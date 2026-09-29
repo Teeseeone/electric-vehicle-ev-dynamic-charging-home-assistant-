@@ -80,6 +80,20 @@ blueprint:
           domain: sensor
           device_class: power
 
+    charger_power_sensor:
+      name: Actual Charger Power Sensor (Optional)
+      description: >
+        Optional measured EV charger power sensor in watts. When selected, the blueprint
+        uses the measured charger power instead of estimating charger consumption from
+        charging current and supply type. Recommended when a local charger integration
+        exposes real-time power, such as a Tesla Wall Connector. Leave empty to use the
+        electrical supply calculation as a fallback.
+      default: ""
+      selector:
+        entity:
+          domain: sensor
+          device_class: power
+
     max_grid_power:
       name: Maximum Grid Draw (W)
       description: Maximum total household power draw the automation should allow.
@@ -249,6 +263,7 @@ action:
       debug_logging: !input debug_logging
 
       sensor_house_power_entity: !input sensor_house_power
+      charger_power_sensor_input: !input charger_power_sensor
       charging_current_entity: !input charging_current
       sensor_charging_entity: !input sensor_charging
       charger_toggle_entity: !input charger_toggle
@@ -268,8 +283,25 @@ action:
       charging_current_value: "{{ states(charging_current_entity) | float(0) }}"
       total_consumption: "{{ states(sensor_house_power_entity) | float(0) }}"
 
+      measured_charger_power: >-
+        {% if charger_power_sensor_input not in [none, '', 'none'] %}
+          {{ states(charger_power_sensor_input) | float(0) }}
+        {% else %}
+          0
+        {% endif %}
+
+      charger_power_source: >-
+        {% if charger_power_sensor_input not in [none, '', 'none']
+              and (measured_charger_power | float(0)) > 0 %}
+          measured
+        {% else %}
+          estimated
+        {% endif %}
+
       charger_consumption: >-
-        {% if charging_state in ['charging', 'starting'] %}
+        {% if charger_power_source == 'measured' %}
+          {{ measured_charger_power | float(0) }}
+        {% elif charging_state in ['charging', 'starting'] %}
           {{ (charging_current_value | float(0)) * (watts_per_amp | float(230)) }}
         {% else %}
           0
@@ -355,6 +387,7 @@ action:
                       entity_id: !input charging_current
                       message: >-
                         STOP: house={{ total_consumption | round(0) }} W,
+                        charger={{ charger_consumption | round(0) }} W ({{ charger_power_source }}),
                         limit={{ active_grid_limit | round(0) }} W,
                         free={{ actual_free_power | round(0) }} W,
                         target=0 A, state={{ charging_state }}.
@@ -517,6 +550,7 @@ action:
                       entity_id: !input charging_current
                       message: >-
                         RAMP DOWN: house={{ total_consumption | round(0) }} W,
+                        charger={{ charger_consumption | round(0) }} W ({{ charger_power_source }}),
                         free={{ actual_free_power | round(0) }} W,
                         target={{ new_target_value | round(0) }} A.
           - stop: Ramp-down completed
@@ -553,7 +587,10 @@ action:
       confirmed_charging_state: "{{ states(sensor_charging_entity) | lower }}"
       confirmed_current: "{{ states(charging_current_entity) | float(0) }}"
       confirmed_charger_consumption: >-
-        {% if confirmed_charging_state in ['charging', 'starting'] %}
+        {% if charger_power_sensor_input not in [none, '', 'none']
+              and (states(charger_power_sensor_input) | float(0)) > 0 %}
+          {{ states(charger_power_sensor_input) | float(0) }}
+        {% elif confirmed_charging_state in ['charging', 'starting'] %}
           {{ (confirmed_current | float(0)) * (watts_per_amp | float(230)) }}
         {% else %}
           0
