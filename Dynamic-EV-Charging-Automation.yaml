@@ -518,6 +518,23 @@ action:
                               name: Dynamic EV Charging v2.4
                               entity_id: !input charging_current
                               message: >-
+                                {% if charger_toggle_entity.startswith('switch.') %}
+                                  START COMMAND SENT – Tesla Fleet will wake vehicle automatically if required.
+                                {% else %}
+                                  START COMMAND SENT via select-based charger control.
+                                {% endif %}
+                                Requested start current={{ min_amps | round(0) }} A.
+
+                  - choose:
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ debug_logging }}"
+                        sequence:
+                          - action: logbook.log
+                            data:
+                              name: Dynamic EV Charging v2.4
+                              entity_id: !input charging_current
+                              message: >-
                                 RESTART: stable free power={{ confirmed_free_power | round(0) }} W,
                                 confirmed target={{ confirmed_target | round(0) }} A.
             default:
