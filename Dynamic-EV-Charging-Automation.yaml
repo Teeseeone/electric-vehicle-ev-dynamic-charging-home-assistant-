@@ -10,7 +10,8 @@ blueprint:
     - Independent ramp-up and ramp-down step sizes and delays.
     - Single-phase 230 V, three-phase 230 V, and three-phase 400 V supply presets.
     - One simple **Maximum Grid Draw** limit for the whole house.
-    - Optional local charger status, power, and current sensors.
+    - Optional local charger status, power, current, and vehicle-connected sensors.
+    - Optional target-EV charge-cable safety gate for shared chargers.
     - Measured **W/A calibration** when both charger power and charger current are available.
     - Configurable starting charging current.
     - Ramp-up deadband and stability check.
@@ -118,6 +119,29 @@ blueprint:
       selector:
         entity:
           domain: sensor
+
+    charger_vehicle_connected_sensor:
+      name: Charger Vehicle Connected Sensor (Optional)
+      description: >
+        Local charger binary sensor that confirms a vehicle is physically connected.
+        For Tesla Wall Connector, use binary_sensor.tesla_wall_connector_vehicle_connected.
+        If configured and not ON, the automation will not send charging commands.
+      default: ""
+      selector:
+        entity:
+          domain: binary_sensor
+
+    target_ev_charge_cable_sensor:
+      name: Target EV Charge Cable Sensor (Optional)
+      description: >
+        Vehicle-specific binary sensor that confirms the EV controlled by this automation
+        has its charge cable connected. For Tesla Fleet, select the Model Y charge-cable
+        binary sensor. If configured and not ON, the automation will not send charging
+        commands. This is strongly recommended when the charger may be shared by multiple EVs.
+      default: ""
+      selector:
+        entity:
+          domain: binary_sensor
 
     max_grid_power:
       name: Maximum Grid Draw (W)
@@ -307,9 +331,18 @@ action:
       charger_power_sensor_input: !input charger_power_sensor
       charger_current_sensor_input: !input charger_current_sensor
       charger_status_sensor_input: !input charger_status_sensor
+      charger_vehicle_connected_sensor_input: !input charger_vehicle_connected_sensor
+      target_ev_charge_cable_sensor_input: !input target_ev_charge_cable_sensor
       charging_current_entity: !input charging_current
       sensor_charging_entity: !input sensor_charging
       charger_toggle_entity: !input charger_toggle
+
+      charger_vehicle_connected_ok: >-
+        {{ charger_vehicle_connected_sensor_input in [none, '', 'none']
+           or is_state(charger_vehicle_connected_sensor_input, 'on') }}
+      target_ev_charge_cable_ok: >-
+        {{ target_ev_charge_cable_sensor_input in [none, '', 'none']
+           or is_state(target_ev_charge_cable_sensor_input, 'on') }}
 
       active_grid_limit: !input max_grid_power
 
@@ -427,6 +460,45 @@ action:
         - plugged_in
         - waiting
         - waiting_for_authorization
+
+  # Shared-charger safety gates: do not send commands unless the local charger and
+  # target EV connection checks pass when those optional sensors are configured.
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ not charger_vehicle_connected_ok }}"
+        sequence:
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ debug_logging }}"
+                sequence:
+                  - action: logbook.log
+                    data:
+                      name: Dynamic EV Charging v2.4
+                      entity_id: !input sensor_charging
+                      message: >-
+                        HOLD: local charger does not report a vehicle connected.
+                        No Tesla/EV charging commands were sent.
+          - stop: No vehicle is connected to the configured charger
+
+      - conditions:
+          - condition: template
+            value_template: "{{ not target_ev_charge_cable_ok }}"
+        sequence:
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ debug_logging }}"
+                sequence:
+                  - action: logbook.log
+                    data:
+                      name: Dynamic EV Charging v2.4
+                      entity_id: !input sensor_charging
+                      message: >-
+                        HOLD: target EV charge-cable sensor is not ON.
+                        No charging commands were sent to the target EV.
+          - stop: Target EV charge cable is not connected
 
   # Do not interfere when charging is complete, disconnected, unavailable, or in an unsupported state.
   - choose:
