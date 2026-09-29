@@ -1,214 +1,362 @@
-# Tesla Dynamic Charging Automation for Home Assistant (also Ford, Mercedes... any EV)
+# Dynamic EV Charging Automation for Home Assistant — Tesla Fleet Fork
 
-This project automates the charging current of an electric vehicle based on household power consumption.  
-It works with **any EV (Tesla, Mercedes, Ford, BYD, etc.)** or **any EV charger** as long as it is integrated and can be controlled within Home Assistant.
+> **Tesla Fleet focused fork of the original Dynamic EV Charging Automation by [EDV11](https://github.com/EDV11/electric-vehicle-ev-dynamic-charging-home-assistant-).**
+>
+> This fork keeps the original blueprint behavior while adding direct Tesla Fleet `switch` support and independent charging-current ramp-up / ramp-down controls.
 
-This blueprint dynamically adjusts the charging rate, ensuring that the vehicle uses the **maximum available power** without exceeding the contracted limit.  
-It also supports **different power limits for day and night** to optimize charging based on electricity tariffs.
+## Latest version: v2.3
 
-**If you found this project helpful, please consider buying me a coffee!**
+### What this fork adds
 
-<div align="center">
-  <a href='https://ko-fi.com/K3K819CO23' target='_blank'>
-    <img height='36' style='border:0px;height:36px;' 
-         src='https://storage.ko-fi.com/cdn/kofi6.png?v=6' border='0' 
-         alt='Buy Me a Coffee at ko-fi' />
-  </a>
-</div>
+#### Direct Tesla Fleet start/stop support
 
----
-## 🆕 **Latest Update: Version 2.2 Released!**
-### ⭐ **What's New in v2.2**
-#### **Optional Location Tracker**
-- **Car/Person Location Tracker is now optional**: Leave the field empty during configuration to disable location-based checks entirely
-- **Multi-vehicle support**: Ideal for households with more than one EV where tying regulation to a specific person/vehicle leads to incorrect behavior
-- **Shared charger friendly**: Useful when the charger may serve cars not linked to the configured tracker (guests, family vehicles, etc.)
-- **Backwards compatible**: Existing setups using the location tracker continue to work exactly as before
+The original blueprint expected the charging start/stop control to be a Home Assistant `select` entity.
 
-**No action required for existing users** - the previous behavior is preserved when a tracker entity is configured.
+This fork supports both:
 
----
+- `select` entities
+- `switch` entities
 
-### 📋 **Previous Updates**
+For a `switch` entity:
 
-<details>
-<summary><b>Version 2.1 - Case-Insensitive Charging Status Support</b></summary>
+- `switch.turn_on` starts charging
+- `switch.turn_off` stops charging
 
-#### **Case-Insensitive Charging Status Support**
-- **ESPhome Tesla BLE compatibility**: Now supports "Charging" (capital C) status from ESPhome Tesla BLE client
-- **Multiple case format support**: Accepts `charging`, `Charging`, `CHARGING`, and other variations
-- **Improved status detection**: Uses `| lower` filter for robust state comparison
-- **Better integration compatibility**: Works seamlessly with different Home Assistant integrations and custom components
+This makes it possible to use the Tesla Fleet charging switch directly, for example:
 
-**No configuration changes required** - existing automations will automatically benefit from improved status detection.
-</details>
+```text
+switch.model_y_charge
+```
 
-<details>
-<summary><b>Version 2.0 - Smart Start/Stop Control</b></summary>
+Existing chargers using the original `select` logic remain supported.
 
-#### **Smart Start/Stop Control**
-- **Automatic charger control**: Instead of trying to set charging current to 0A (which many chargers can't handle), the automation now properly stops and starts charging
-- **Prevents charger errors** caused by invalid amperage values
-- **Seamless operation** with intelligent state management
+#### Separate ramp-up and ramp-down logic
 
-#### **Fixed Power Calculation Logic**
-- Resolved critical issues in power calculation that could cause incorrect decisions
-- **No more oscillating** start/stop behavior
-- **Accurate power management** ensures optimal charging
+Charging current can now increase and decrease using different step sizes and delays.
 
-#### **Enhanced Stability**
-- **Gradual amperage adjustment** prevents rapid changes that cause charger errors
-- **Improved reliability** during power fluctuations
-- **Better error handling** for edge cases
+New blueprint settings:
 
-**Note for v2.0 users**: You must recreate your automation as new configuration options were added.
-</details>
+- **Ramp-up step size (A)**
+- **Ramp-up delay (seconds)**
+- **Ramp-down step size (A)**
+- **Ramp-down delay (seconds)**
 
----
-## 📥 Installation
+Current defaults:
 
-This blueprint can be installed in two ways:
+| Setting | Default |
+| --- | ---: |
+| Ramp-up step | 1 A |
+| Ramp-up delay | 10 s |
+| Ramp-down step | 2 A |
+| Ramp-down delay | 10 s |
 
-### **🔗 Direct Import via Home Assistant**
-<a href="https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https://raw.githubusercontent.com/EDV11/electric-vehicle-ev-dynamic-charging-home-assistant-/main/Dynamic-EV-Charging-Automation.yaml" target="_blank" rel="noreferrer noopener"><img src="https://my.home-assistant.io/badges/blueprint_import.svg" alt="Open your Home Assistant instance and show the blueprint import dialog with a specific blueprint pre-filled." /></a>
+Example behavior:
 
-### **📂 Manual Installation**
-1. Open the blueprint file in this repository (https://raw.githubusercontent.com/EDV11/electric-vehicle-ev-dynamic-charging-home-assistant-/main/Dynamic-EV-Charging-Automation.yaml).
-2. Copy the URL from your browser's address bar.
-3. In Home Assistant, go to **Settings → Automations & Scenes → Blueprints**.
-4. Click **"Import Blueprint"** in the bottom right corner.
-5. Paste the URL and click **"Preview Blueprint"**.
-6. Click **"Import Blueprint"** to finalize.
+```text
+Target increases from 10 A to 16 A:
+10 → 11 → 12 → 13 → 14 → 15 → 16
+     10s   10s   10s   10s   10s   10s
+
+Target decreases from 16 A to 8 A:
+16 → 14 → 12 → 10 → 8
+      10s   10s   10s   10s
+```
+
+This allows faster load shedding through a larger downward step while keeping charging increases more gradual.
+
+#### Improved minimum-current handling
+
+When the calculated charging target falls below the configured minimum charging current, the blueprint now relies on the configured start/stop control instead of trying to force the charging-current entity below its valid minimum.
+
+A calculated target of `0 A` is handled by stopping charging.
 
 ---
 
-## 🔌 🚗 🔋 Tested Hardware  
+## Installation
 
-This is some of the hardware I've used and tested with this automation:  
+### Stable v2.3 import
 
-- [Shelly EM Energy Meter](https://amzlink.to/az0UFbhU9htEu)  
-- Tesla car with [Tesla Fleet integration](https://www.home-assistant.io/integrations/tesla_fleet/).  
-  - [Buy your Tesla with a discount through this link](https://ts.la/eduardo432919)  
-- [Feyree Type 2 portable 7kW charger](https://s.click.aliexpress.com/e/_opguDAp)  
-- [Feyree Type 2 Wallbox](https://s.click.aliexpress.com/e/_oEFZ75f)  
+Use the released v2.3 blueprint:
 
-Just to be clear, if you can control your car from Home Assistant and have access to its sensors, you can use this automation without a connected charger. But by controlling the charger you make sure future compatibility (and be able to charge different cars)
+<a href="https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https://raw.githubusercontent.com/Teeseeone/electric-vehicle-ev-dynamic-charging-home-assistant-/v2.3/Dynamic-EV-Charging-Automation.yaml" target="_blank" rel="noreferrer noopener"><img src="https://my.home-assistant.io/badges/blueprint_import.svg" alt="Import Dynamic EV Charging Automation v2.3 into Home Assistant" /></a>
 
----
+Or paste this URL manually into Home Assistant:
 
-## 🔧 Requirements
+```text
+https://raw.githubusercontent.com/Teeseeone/electric-vehicle-ev-dynamic-charging-home-assistant-/v2.3/Dynamic-EV-Charging-Automation.yaml
+```
 
-Before using this blueprint, you need the following:
+In Home Assistant:
 
-- **Total Power Consumption Sensor** (e.g., <a href="https://amzlink.to/az0UFbhU9htEu" target=_blank>Shelly EM Gen3</a> is recommended if you don't have one. You can get it from that link).
-- **Your EV or Charger integrated into Home Assistant**, exposing the necessary sensors. I use this <a href="https://s.click.aliexpress.com/e/_opguDAp" target=_blank>Feyree portable charger</a>, I haven't tested with any other.
-- **Basic information about your electricity contract**, including:
-  - Grid voltage (e.g., 230V for EU, 120V for the US).
-  - Maximum grid power limits (contracted power).
-  - Day and night tariff periods (if applicable).
+1. Go to **Settings → Automations & Scenes → Blueprints**.
+2. Select **Import Blueprint**.
+3. Paste the URL above.
+4. Select **Preview Blueprint**.
+5. Select **Import Blueprint**.
+6. Create a new automation from **Dynamic EV Charging Automation v2.3**.
 
----
+### Development / main branch
 
-## ⚙️ Configuration
+If you intentionally want the newest changes from this fork instead of the released version:
 
-The following parameters need to be configured:
+```text
+https://raw.githubusercontent.com/Teeseeone/electric-vehicle-ev-dynamic-charging-home-assistant-/main/Dynamic-EV-Charging-Automation.yaml
+```
 
-### **Basic Settings**
-- **Charging interval** (1, 3, or 5 minutes).
-- **🆕 A device tracker (optional in v2.2)** – Preferably the car, to ensure the automation runs only when the EV is at home. **Leave empty to disable** the location check entirely (useful for shared chargers or multi-vehicle households).
-- **A charging status sensor** to ensure changes are only made when the EV is actively charging.
-- **Total power consumption sensor** (measured in watts).
-
-### **Power Management**
-- **Maximum Grid Power (Day)** – Set to **0** if you only want to charge at night.
-- **Maximum Grid Power (Night)**.
-- **Grid voltage**.
-- **Maximum charging amperage** – The system will never exceed this limit, even if extra power is available.
-- **Minimum charging amperage** – The system will stop charging if power availability drops below this threshold.
-
-### **Charger Control**
-- **Charging current control entity** – The EV or charger must support dynamic amperage control.
-- **EV Charging Toggle (Start/Stop)** – A `select` entity that controls your charger's start/stop state with options like:
-  - `"Start charging"`
-  - `"Stop charging"`
-  - `"Waiting for command"`
-
-### **Time Periods**
-- **Day-time period settings** (Define when "day" mode applies, typically when electricity is more expensive or power is limited).
+For normal use, the tagged release URL is recommended because it stays pinned to the exact v2.3 code.
 
 ---
 
-## 🚀 How It Works
+## Tesla Fleet example
 
-The automation runs every **1, 3, or 5 minutes**, depending on the selected interval.  
-It **only** adjusts the charging rate if the EV is **charging** and (if configured) **at home**.  
+A typical Tesla Fleet setup can use:
 
-### **Intelligent Power Management**
-1. **Monitors** total household power consumption
-2. **Calculates** available power for EV charging
-3. **Adjusts** charging current gradually (1A steps with delays)
-4. **Stops charging** when insufficient power (instead of attempting invalid 0A)
-5. **Restarts automatically** when power becomes available
+```text
+EV Charging Toggle (Start/Stop):
+switch.model_y_charge
 
-### **Dynamic Load Adjustment**
-The automation continuously monitors household power usage and dynamically **adjusts the charging current** to avoid exceeding the contracted power limit.  
-If a high-power appliance (e.g., oven, stove, heating) is turned on, the charging rate will **automatically decrease** to prevent overloading.  
-Once power consumption drops, the EV will **resume charging at the maximum allowed rate**.
+Charging Current Control:
+number.model_y_charge_current
+```
 
-### **Day & Night Power Limits**
-Many electricity contracts offer **cheaper power at night**, along with **higher power limits**.  
-This blueprint allows setting **different power limits for day and night**, ensuring that charging is optimized based on your tariff structure.
+Entity names vary between Home Assistant installations, so select the corresponding Tesla Fleet entities from your own system.
 
-### **Safety Features**
-- **Maximum/minimum amperage limits**
-- **Gradual adjustments** to prevent charger errors
-- **Optional location check** – when configured, only operates when car is home and plugged in
-- **Respects charger capabilities**
+The blueprint also requires a charging-status sensor and a whole-house power sensor.
 
 ---
 
-## 🔍 **Compatibility**
+## Requirements
 
-**Works with any EV charger that has:**
+The blueprint expects the following Home Assistant entities or values:
 
-- ✅ Amperage control via Home Assistant (`number` entity)
-- ✅ Start/stop control via Home Assistant (`select` entity) 
-- ✅ Charging state sensor (`sensor` entity)
-
----
-
-## 💡 **Tips for Best Results**
-
-1. **Set realistic min/max amperage** based on your electrical system
-2. **Monitor for the first few days** to ensure stable operation
-3. **Adjust time periods** to match your electricity tariff
-4. **Use shorter intervals** (1 min) for faster response to power changes
-5. **Disable the location tracker** (leave empty) if you have multiple EVs or share the charger with other vehicles
-
----
-
-## ❓ Reporting Issues & Community Discussion
-
-If you encounter issues or have suggestions for improvements, please check the **Home Assistant Forum thread** for support.  
-[https://community.home-assistant.io/t/dynamic-ev-charging-automation/846232](https://community.home-assistant.io/t/dynamic-ev-charging-automation/846232)
+- **Total household power sensor**
+  - `sensor` domain
+  - power device class
+  - measured in watts
+- **Charging-current control**
+  - `number` entity
+  - used to set EV charging amperage
+- **Charging start/stop control**
+  - `select` or `switch`
+- **Charging-status sensor**
+  - `sensor` entity
+- **Optional car/person device tracker**
+  - `device_tracker`
+- Grid voltage
+- Maximum grid power for day and night
+- Minimum and maximum charging amperage
 
 ---
 
-## 🙏 **Feedback & Support**
+## Configuration
 
-This blueprint has been tested extensively, but every setup is different. Please:
+### Adjustment interval
 
-- ⭐ **Star the repository** if you find it useful
-- 🐛 **Report issues** via forum
-- 💬 **Share your experience** in the comments
-- 🔄 **Suggest improvements** for future versions
+Choose how often the automation recalculates available charging power:
+
+- 1 minute
+- 3 minutes
+- 5 minutes
+
+A shorter interval reacts more quickly to changing household consumption.
+
+### Location tracker
+
+The location tracker is optional.
+
+Leave it empty if you do not want location-based checks, for example when:
+
+- the charger is shared
+- multiple EVs use the same charger
+- you want charging regulation to depend only on charging state
+
+### Charging-status sensor
+
+The blueprint condition currently recognizes these charging states:
+
+```text
+charging
+charged
+plugged_in
+Charging
+CHARGING
+```
+
+The internal charger-consumption calculation normalizes the sensor state to lowercase and treats these states as consuming charging power:
+
+```text
+charging
+plugged_in
+waiting_for_authorization
+waiting
+```
+
+If your Tesla Fleet charging-status sensor uses different state values, verify them in **Developer Tools → States** before relying on the automation.
+
+### Start/stop control
+
+The blueprint supports two control types.
+
+For a `switch`:
+
+```text
+ON  → start charging
+OFF → stop charging
+```
+
+For a `select`, the existing upstream behavior is preserved and the blueprint sends:
+
+```text
+Start charging
+Stop charging
+```
+
+### Charging-current ramping
+
+Ramp-up and ramp-down are configured independently.
+
+For example:
+
+```text
+Ramp-up step:      1 A
+Ramp-up delay:    10 s
+
+Ramp-down step:    2 A
+Ramp-down delay:  10 s
+```
+
+A larger ramp-down step can reduce EV load more quickly when household consumption rises.
+
+### Grid limits
+
+The blueprint supports separate maximum grid-power limits for:
+
+- daytime
+- nighttime
+
+The active limit is selected using the configured days and start/end hours.
+
+### Minimum charging current
+
+If available power would require charging below the configured minimum current, the target becomes `0 A` and the blueprint stops charging through the start/stop control.
+
+When enough power becomes available again, charging is started and the current ramps toward the newly calculated target.
 
 ---
 
-## 📜 License
+## How the calculation works
 
-This project is released under the **MIT License**, which means you are free to **download, modify, and share it** as you like.
+The blueprint reads:
 
-If you prefer **Creative Commons**, the most suitable option would be **CC BY-SA 4.0** (Attribution-ShareAlike), which allows modifications as long as credit is given.
+- total household consumption
+- current charging-current setting
+- configured grid-power limit
+- configured voltage
 
-Would you like to use **MIT**, **CC BY-SA 4.0**, or another license? Let me know, and I'll finalize this section accordingly!
+When the charging-status sensor indicates an active charging state, estimated charger consumption is calculated as:
+
+```text
+charging current × voltage
+```
+
+Available charging power is then calculated from the active day/night grid limit while accounting for the charging load already included in the household power reading.
+
+The resulting target current is:
+
+- capped at **Maximum amps**
+- changed to `0 A` if below **Minimum amps**
+- otherwise rounded down to a whole amp
+
+The current then ramps toward that target using the independently configured up/down step sizes and delays.
+
+---
+
+## Compatibility
+
+This fork is designed for Tesla Fleet but remains compatible with the original blueprint control model.
+
+Required capabilities:
+
+- ✅ Dynamic amperage control through a Home Assistant `number` entity
+- ✅ Start/stop through either a `switch` or compatible `select`
+- ✅ Charging status through a `sensor`
+- ✅ Whole-house power measurement
+
+### Tesla Fleet
+
+The main fork-specific addition is support for Tesla Fleet charging control exposed as a `switch`, such as:
+
+```text
+switch.model_y_charge
+```
+
+This removes the need for a template-select or input-select helper just to translate start/stop commands.
+
+---
+
+## Version history
+
+### v2.3 — Tesla Fleet switch support + asymmetric ramping
+
+- Added `switch` support to **EV Charging Toggle (Start/Stop)**
+- Added direct Tesla Fleet charging start/stop support
+- Preserved existing `select` behavior
+- Added separate ramp-up step size
+- Added separate ramp-up delay
+- Added separate ramp-down step size
+- Added separate ramp-down delay
+- Improved handling when the calculated target is below minimum charging current
+
+### v2.2 — Optional location tracker
+
+Inherited from the upstream project:
+
+- Car/person location tracker became optional
+- Leaving it empty disables location-based checks
+- Better suited to shared chargers and multi-EV households
+
+### v2.1 — Charging-status capitalization support
+
+Inherited from the upstream project:
+
+- Added support for `Charging` from ESPHome Tesla BLE
+- Added support for multiple capitalization variants
+- Uses lowercase normalization in the charger-consumption calculation
+
+### v2.0 — Smart start/stop control
+
+Inherited from the upstream project:
+
+- Added start/stop charger control
+- Avoided relying on unsupported `0 A` current settings
+- Updated available-power calculation
+- Added gradual amperage adjustment
+
+---
+
+## Notes and limitations
+
+- This automation controls real electrical load. Start with conservative limits and verify its behavior in Home Assistant before relying on it unattended.
+- The blueprint estimates EV charging power from configured current × voltage. It does not directly measure charger power.
+- Charging-state values vary between integrations. Confirm that your selected sensor reports a state recognized by the blueprint.
+- The blueprint uses a single configured voltage value for its power/current calculation.
+
+---
+
+## Credits
+
+This repository is a fork of:
+
+**Dynamic EV Charging Automation** by **EDV11**
+
+https://github.com/EDV11/electric-vehicle-ev-dynamic-charging-home-assistant-
+
+The original project introduced the core dynamic charging, day/night limits, location tracking, charging-state handling, and start/stop logic.
+
+This fork adds Tesla Fleet `switch` support, independent ramp-up/ramp-down controls, and the minimum-current handling changes described above.
+
+---
+
+## License
+
+Please refer to the repository license and the upstream project's licensing terms.
