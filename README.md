@@ -274,6 +274,7 @@ The blueprint does **not** modify `number.model_y_charge_limit`. Tesla's configu
 The blueprint expects:
 
 - whole-house power sensor in watts
+- optional actual charger-power sensor in watts
 - charging-current `number` entity
 - charging start/stop `switch` or compatible `select`
 - charging-state `sensor`
@@ -288,9 +289,11 @@ The blueprint expects:
 
 The blueprint uses one **Maximum Grid Draw (W)** limit at all times. There are no separate day/night limits or time schedules in v2.4.
 
-The blueprint determines a watts-per-amp value from the selected electrical supply.
+You can optionally select an **Actual Charger Power Sensor**. When configured, the blueprint uses that measured charger wattage when separating EV load from the total house load. For a Tesla Wall Connector, select the local power sensor that reports the charger's current watt draw.
 
-It then estimates charging power while the car is actively charging and adds that back to the measured whole-house load so the EV's existing load is not counted twice when calculating the possible target.
+If no charger-power sensor is selected, the blueprint falls back to estimating charger power from the charging-current setting and selected electrical supply.
+
+The electrical supply presets are still used to convert available watts into a charging-current target.
 
 The resulting target current is:
 
@@ -355,6 +358,7 @@ Three-phase 400 V
 - Added fresh-power ramp-up stability check
 - Added 5-minute default restart lockout
 - Added safe minimum-current restart behavior
+- Added optional measured charger-power input with electrical-supply fallback
 - Added optional Home Assistant Logbook debug output
 - Preserved v2.3 switch/select control and independent ramp settings
 
