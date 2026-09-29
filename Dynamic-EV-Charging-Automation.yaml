@@ -15,7 +15,7 @@ blueprint:
     - Measured **W/A calibration** when both charger power and charger current are available.
     - Configurable starting charging current.
     - Ramp-up deadband, initial stability check, and fresh power checks before every increase step.
-    - Single-run control so scheduled triggers cannot interrupt an active ramp.
+    - Fixed one-minute idle re-evaluation with single-run control so scheduled triggers cannot interrupt an active ramp.
     - Five-minute restart lockout by default.
     - Optional Home Assistant Logbook debug messages.
     - Optional location tracking; leave it empty to disable the location check.
@@ -35,20 +35,6 @@ blueprint:
   domain: automation
 
   input:
-    interval:
-      name: Adjustment Interval
-      description: How often the automation starts a new charging-power calculation.
-      default: /1
-      selector:
-        select:
-          options:
-            - label: "1 minute"
-              value: /1
-            - label: "3 minutes"
-              value: /3
-            - label: "5 minutes"
-              value: /5
-
     device_tracker:
       name: "[CAR/PERSON] Location Tracker (Optional)"
       description: "CAR/PERSON sensor. Optional location check. Leave empty to allow charging control regardless of tracker state."
@@ -310,7 +296,7 @@ blueprint:
 
 triggers:
   - trigger: time_pattern
-    minutes: !input interval
+    minutes: "/1"
 
 variables:
   device_tracker_input: !input device_tracker
