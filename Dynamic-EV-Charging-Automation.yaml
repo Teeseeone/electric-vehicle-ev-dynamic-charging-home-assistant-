@@ -1,6 +1,12 @@
 blueprint:
-  name: Dynamic EV Charging Automation v2.2
+  name: Dynamic EV Charging Automation v2.3
   description: >
+    **v2.3 - Added switch support for charging start/stop**
+    - EV Charging Toggle can now be either a select or switch entity
+    - Switch entities use turn_on to start charging and turn_off to stop charging
+    - Keeps existing select entity behavior unchanged
+    - Adds direct support for Tesla Fleet charging switches
+
     **v2.2 - Optional location tracker**
     - The Car/Person Location Tracker is now optional
     - Leave it empty to disable location-based checks
@@ -73,9 +79,11 @@ blueprint:
     charger_toggle:
       name: EV Charging Toggle (Start/Stop)
       description: >
-        Select entity that controls the charging state of the EV charger.
+        Entity that controls the charging state of the EV charger.
 
-        This entity should support options like "Start charging", "Stop charging", or similar commands.
+        Supports select entities with options like "Start charging" / "Stop charging",
+        and switch entities where turn_on starts charging and turn_off stops charging.
+        This allows direct use of charging switches such as Tesla Fleet.
 
         When the calculated amperage falls below the minimum threshold, the automation will use this entity to stop charging instead of setting amperage to 0.
 
@@ -83,7 +91,9 @@ blueprint:
       default: select.ev_charger_toggle_charging
       selector:
         entity:
-          domain: select
+          domain:
+            - select
+            - switch
     sensor_house_power:
       name: Total Power Consumption Sensor
       description: Sensor that measures the total power consumption of the household in real-time.  This value is used to determine the available power for charging the electric vehicle (EV), ensuring that the charging current is dynamically adjusted to prevent exceeding the contracted power limit.
@@ -224,6 +234,7 @@ action:
       sensor_house_power_entity: !input sensor_house_power
       charging_current_entity: !input charging_current
       sensor_charging_entity: !input sensor_charging
+      charger_toggle_entity: !input charger_toggle
       charging_current_value: "{{ states(charging_current_entity) | float(0) }}"
       grid_power: "{{ states(sensor_house_power_entity) | float(0) }}"
       total_consumption: "{{ states(sensor_house_power_entity) | float(0) }}"
@@ -259,16 +270,35 @@ action:
         {% endif %}
 
   # First: Control charging state (Start/Stop)
-  - service: select.select_option
-    target:
-      entity_id: !input charger_toggle
-    data:
-      option: |-
-        {% if actual_free_power / voltage >= min_amps %}
-          Start charging
-        {% else %}
-          Stop charging
-        {% endif %}
+  # Supports both select entities and switch entities (for example Tesla Fleet).
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ charger_toggle_entity.startswith('switch.') }}"
+        sequence:
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ actual_free_power / voltage >= min_amps }}"
+                sequence:
+                  - action: switch.turn_on
+                    target:
+                      entity_id: !input charger_toggle
+            default:
+              - action: switch.turn_off
+                target:
+                  entity_id: !input charger_toggle
+    default:
+      - action: select.select_option
+        target:
+          entity_id: !input charger_toggle
+        data:
+          option: |-
+            {% if actual_free_power / voltage >= min_amps %}
+              Start charging
+            {% else %}
+              Stop charging
+            {% endif %}
 
   - repeat:
       while:
