@@ -153,14 +153,13 @@ blueprint:
     min_amps:
       name: Minimum amps
       description: >
-        Minimum usable AC charging current. Tesla Wall Connector supports 6-32 A;
-        below this value charging may not actually start even if the Tesla Fleet
-        current entity accepts the request. If calculated available power is below
-        this value, the automation stops charging instead of requesting a lower current.
-      default: 6
+        Minimum requested charging current. If calculated available power is below this
+        value, the automation stops charging instead of requesting a lower current.
+        The EV/charger may take some time to react to very low current requests.
+      default: 1
       selector:
         number:
-          min: 6
+          min: 1
           max: 32
           step: 1
 
