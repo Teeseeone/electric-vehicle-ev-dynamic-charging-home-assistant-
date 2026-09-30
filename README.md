@@ -235,6 +235,7 @@ EV_budget     = Maximum Grid Draw - current non-EV household load
 
 `grid_headroom` shows how far the house is currently below or above the configured limit.
 `EV_budget` shows how many watts the charger is allowed to use while respecting that same limit.
+The EV budget is clamped so it can never exceed **Maximum Grid Draw**, even if house and charger sensors update at slightly different moments.
 
 When an actual charger-power sensor is available:
 
@@ -264,6 +265,8 @@ The resulting target current is:
 - otherwise rounded down to a whole amp
 
 During ramp-up, this calculation is repeated before **every** increase step. If the fresh target falls, the blueprint stops increasing and can reverse into the configured ramp-down behavior.
+
+After the initial ramp-up stability delay, a fresh target below the current charging current now triggers an immediate ramp-down instead of waiting for the next one-minute evaluation. If the fresh target falls below the configured minimum, charging is stopped.
 
 ---
 
@@ -416,6 +419,8 @@ Before tagging v3.0, verify:
 - Changed automation execution from `restart` to `single` so scheduled triggers cannot cancel an active ramp
 - Added fresh whole-house and charger re-checks before every ramp-up step; ramp-up halts or reverses if the safe target drops
 - Fixed stale charger-power handling so measured charger watts are ignored when the local charger is no longer actively charging
+- Clamped EV budget so sensor timing mismatches cannot make it exceed Maximum Grid Draw
+- Added immediate post-stability ramp-down/stop when the fresh target falls below the current charging current
 
 ### v2.3
 
