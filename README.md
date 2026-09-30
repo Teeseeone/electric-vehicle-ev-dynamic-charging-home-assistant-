@@ -8,10 +8,11 @@ It is designed to work especially well with **Tesla Fleet + Tesla Wall Connector
 
 ## Version status
 
-- **Stable release:** v2.3
-- **Release candidate:** v3.0 Tesla Fleet on `main`
+- **Stable release:** v3.0 Tesla Fleet
+- **Release tag:** `v3.0-Tesla-Fleet`
+- **Previous stable release:** v2.3
 
-v3.0 Tesla Fleet is the current test build. Create the release tag only after the final real-world charging tests pass.
+v3.0 Tesla Fleet is the current stable release.
 
 ---
 
@@ -296,19 +297,25 @@ Debug logging:              On while testing
 
 ## Installation
 
-### Stable v2.3
+### Stable v3.0 Tesla Fleet
 
-<a href="https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https://raw.githubusercontent.com/Teeseeone/electric-vehicle-ev-dynamic-charging-home-assistant-/v2.3/Dynamic-EV-Charging-Automation.yaml" target="_blank" rel="noreferrer noopener"><img src="https://my.home-assistant.io/badges/blueprint_import.svg" alt="Import Dynamic EV Charging Automation v2.3 into Home Assistant" /></a>
+<a href="https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https://raw.githubusercontent.com/Teeseeone/electric-vehicle-ev-dynamic-charging-home-assistant-/v3.0-Tesla-Fleet/Dynamic-EV-Charging-Automation.yaml" target="_blank" rel="noreferrer noopener"><img src="https://my.home-assistant.io/badges/blueprint_import.svg" alt="Import Dynamic EV Charging Automation v3.0 Tesla Fleet into Home Assistant" /></a>
 
 Manual URL:
 
 ```text
-https://raw.githubusercontent.com/Teeseeone/electric-vehicle-ev-dynamic-charging-home-assistant-/v2.3/Dynamic-EV-Charging-Automation.yaml
+https://raw.githubusercontent.com/Teeseeone/electric-vehicle-ev-dynamic-charging-home-assistant-/v3.0-Tesla-Fleet/Dynamic-EV-Charging-Automation.yaml
 ```
 
-### Test v3.0 release candidate
+GitHub release:
 
-Use the current `main` branch:
+```text
+https://github.com/Teeseeone/electric-vehicle-ev-dynamic-charging-home-assistant-/releases/tag/v3.0-Tesla-Fleet
+```
+
+### Development build
+
+Use `main` only when testing unreleased changes:
 
 ```text
 https://raw.githubusercontent.com/Teeseeone/electric-vehicle-ev-dynamic-charging-home-assistant-/main/Dynamic-EV-Charging-Automation.yaml
@@ -375,9 +382,9 @@ The location tracker is optional.
 
 ---
 
-## v3.0 release checklist
+## v3.0 validation checklist
 
-Before tagging v3.0, verify:
+The v3.0 Tesla Fleet release was validated against:
 
 - charging starts successfully
 - starting current is applied correctly
@@ -396,7 +403,7 @@ Before tagging v3.0, verify:
 
 ## Version history
 
-### v3.0 Tesla Fleet — release candidate
+### v3.0 Tesla Fleet — stable
 
 - Added 230 V single-phase, 230 V three-phase, and 400 V three-phase supply presets
 - Simplified power limiting to one **Maximum Grid Draw** value
