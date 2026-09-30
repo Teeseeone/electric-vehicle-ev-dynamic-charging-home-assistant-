@@ -14,6 +14,8 @@ blueprint:
     - Optional target-EV charge-cable safety gate for shared chargers.
     - Measured **W/A calibration** when both charger power and charger current are available.
     - Ignores stale measured charger watts after charging stops or enters an idle state.
+    - Clamps EV budget so it can never exceed Maximum Grid Draw.
+    - Immediately ramps down if the post-stability fresh target drops below the current setting.
     - Configurable starting charging current.
     - Ramp-up deadband only for starting a new ramp, plus fresh power checks before every increase step.
     - Fixed one-minute idle re-evaluation with single-run control so scheduled triggers cannot interrupt an active ramp.
@@ -427,7 +429,9 @@ action:
         {% endif %}
 
       actual_free_power: >-
-        {{ [0, (active_grid_limit | float(0)) - (total_consumption | float(0)) + (charger_consumption | float(0))] | max }}
+        {% set non_ev_load = [0, (total_consumption | float(0)) - (charger_consumption | float(0))] | max %}
+        {% set candidate = (active_grid_limit | float(0)) - non_ev_load %}
+        {{ [0, candidate] | max }}
 
       new_target_value: >-
         {% set raw_amps = (actual_free_power | float(0)) / (watts_per_amp | float(230)) %}
@@ -596,7 +600,9 @@ action:
           - variables:
               confirmed_total_consumption: "{{ states(sensor_house_power_entity) | float(0) }}"
               confirmed_free_power: >-
-                {{ [0, (active_grid_limit | float(0)) - (states(sensor_house_power_entity) | float(0))] | max }}
+                {% set candidate = (active_grid_limit | float(0)) - (states(sensor_house_power_entity) | float(0)) %}
+                {% set bounded = [candidate, (active_grid_limit | float(0))] | min %}
+                {{ [0, bounded] | max }}
               confirmed_target: >-
                 {% set raw_amps = (confirmed_free_power | float(0)) / (watts_per_amp | float(230)) %}
                 {% if raw_amps > (max_amps | float) %}
@@ -746,9 +752,10 @@ action:
                         0
                       {% endif %}
                     step_free_power: >-
-                      {{ [0, (active_grid_limit | float(0))
-                            - (step_total_consumption | float(0))
-                            + (step_charger_consumption | float(0))] | max }}
+                      {% set non_ev_load = [0, (step_total_consumption | float(0))
+                                                - (step_charger_consumption | float(0))] | max %}
+                      {% set candidate = (active_grid_limit | float(0)) - non_ev_load %}
+                      {{ [0, candidate] | max }}
                     step_target: >-
                       {% set raw_amps = (step_free_power | float(0))
                                         / (step_watts_per_amp | float(230)) %}
@@ -1006,8 +1013,10 @@ action:
           0
         {% endif %}
       confirmed_free_power: >-
-        {{ [0, (active_grid_limit | float(0)) - (confirmed_total_consumption | float(0))
-              + (confirmed_charger_consumption | float(0))] | max }}
+        {% set non_ev_load = [0, (confirmed_total_consumption | float(0))
+                                  - (confirmed_charger_consumption | float(0))] | max %}
+        {% set candidate = (active_grid_limit | float(0)) - non_ev_load %}
+        {{ [0, candidate] | max }}
       confirmed_target: >-
         {% set raw_amps = (confirmed_free_power | float(0)) / (watts_per_amp | float(230)) %}
         {% if raw_amps > (max_amps | float) %}
@@ -1019,6 +1028,83 @@ action:
         {% endif %}
 
   - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ (confirmed_target | float(0)) < (min_amps | float(0)) }}"
+        sequence:
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ charger_toggle_entity.startswith('switch.') }}"
+                sequence:
+                  - action: switch.turn_off
+                    target:
+                      entity_id: !input charger_toggle
+            default:
+              - action: select.select_option
+                target:
+                  entity_id: !input charger_toggle
+                data:
+                  option: Stop charging
+
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ debug_logging }}"
+                sequence:
+                  - action: logbook.log
+                    data:
+                      name: Dynamic EV Charging v3.0 - Tesla Fleet
+                      entity_id: !input charging_current
+                      message: >-
+                        STOP AFTER STABILITY CHECK: house={{ confirmed_total_consumption | round(0) }} W,
+                        grid_headroom={{ confirmed_grid_headroom | round(0) }} W,
+                        EV_budget={{ confirmed_free_power | round(0) }} W,
+                        fresh target=0 A. Charging stopped.
+          - stop: Stability check found insufficient power to continue charging
+
+      - conditions:
+          - condition: template
+            value_template: >-
+              {{ (confirmed_target | float(0)) < (confirmed_current | float(0)) }}
+        sequence:
+          - repeat:
+              while:
+                - condition: template
+                  value_template: >-
+                    {{ (states(charging_current_entity) | float(0))
+                       > (confirmed_target | float(0)) }}
+              sequence:
+                - variables:
+                    stability_ramp_down_current: "{{ states(charging_current_entity) | float(0) }}"
+                - action: number.set_value
+                  target:
+                    entity_id: !input charging_current
+                  data:
+                    value: >-
+                      {{ [stability_ramp_down_current - (decrease_step_amps | float),
+                          confirmed_target | float] | max }}
+                - delay:
+                    seconds: "{{ decrease_delay_seconds | int }}"
+
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ debug_logging }}"
+                sequence:
+                  - action: logbook.log
+                    data:
+                      name: Dynamic EV Charging v3.0 - Tesla Fleet
+                      entity_id: !input charging_current
+                      message: >-
+                        RAMP DOWN AFTER STABILITY CHECK:
+                        house={{ confirmed_total_consumption | round(0) }} W,
+                        grid_headroom={{ confirmed_grid_headroom | round(0) }} W,
+                        EV_budget={{ confirmed_free_power | round(0) }} W,
+                        current was={{ confirmed_current | round(0) }} A,
+                        fresh target={{ confirmed_target | round(0) }} A.
+          - stop: Stability check required ramp-down
+
       - conditions:
           - condition: template
             value_template: >-
@@ -1088,9 +1174,10 @@ action:
                         0
                       {% endif %}
                     step_free_power: >-
-                      {{ [0, (active_grid_limit | float(0))
-                            - (step_total_consumption | float(0))
-                            + (step_charger_consumption | float(0))] | max }}
+                      {% set non_ev_load = [0, (step_total_consumption | float(0))
+                                                - (step_charger_consumption | float(0))] | max %}
+                      {% set candidate = (active_grid_limit | float(0)) - non_ev_load %}
+                      {{ [0, candidate] | max }}
                     step_target: >-
                       {% set raw_amps = (step_free_power | float(0))
                                         / (step_watts_per_amp | float(230)) %}
