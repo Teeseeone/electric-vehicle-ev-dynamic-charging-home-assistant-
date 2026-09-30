@@ -15,7 +15,7 @@ blueprint:
     - Measured **W/A calibration** when both charger power and charger current are available.
     - Ignores stale measured charger watts after charging stops or enters an idle state.
     - Configurable starting charging current.
-    - Ramp-up deadband, initial stability check, and fresh power checks before every increase step.
+    - Ramp-up deadband only for starting a new ramp, plus fresh power checks before every increase step.
     - Fixed one-minute idle re-evaluation with single-run control so scheduled triggers cannot interrupt an active ramp.
     - Five-minute restart lockout by default.
     - Optional Home Assistant Logbook debug messages.
@@ -251,8 +251,9 @@ blueprint:
     ramp_up_deadband_amps:
       name: Ramp-Up Deadband (A)
       description: >
-        Suppresses small upward target changes to reduce unnecessary commands.
-        Ramp-down is never blocked by this setting.
+        Minimum upward difference required to START a new ramp-up. Once a ramp has started,
+        the blueprint continues toward the latest safe target, including a final smaller
+        step when needed. Ramp-down is never blocked by this setting.
       default: 1
       selector:
         number:
@@ -853,7 +854,7 @@ action:
                         - condition: template
                           value_template: >-
                             {{ (step_target | float(0)) <=
-                               ((step_current | float(0)) + (ramp_up_deadband_amps | float(0))) }}
+                               (step_current | float(0)) }}
                       sequence:
                         - choose:
                             - conditions:
@@ -865,9 +866,9 @@ action:
                                     name: Dynamic EV Charging v2.4
                                     entity_id: !input charging_current
                                     message: >-
-                                      HOLD RAMP: fresh house={{ step_total_consumption | round(0) }} W,
-                                      current={{ step_current | round(0) }} A,
-                                      target={{ step_target | round(0) }} A,
+                                      HOLD RAMP: fresh target={{ step_target | round(0) }} A
+                                      has been reached by current={{ step_current | round(0) }} A;
+                                      house={{ step_total_consumption | round(0) }} W,
                                       W/A={{ step_watts_per_amp | round(1) }}
                                       ({{ step_watts_per_amp_source }}).
                         - stop: Fresh target no longer requires ramp-up
@@ -1185,7 +1186,7 @@ action:
                         - condition: template
                           value_template: >-
                             {{ (step_target | float(0)) <=
-                               ((step_current | float(0)) + (ramp_up_deadband_amps | float(0))) }}
+                               (step_current | float(0)) }}
                       sequence:
                         - choose:
                             - conditions:
@@ -1197,9 +1198,9 @@ action:
                                     name: Dynamic EV Charging v2.4
                                     entity_id: !input charging_current
                                     message: >-
-                                      HOLD RAMP: fresh house={{ step_total_consumption | round(0) }} W,
-                                      current={{ step_current | round(0) }} A,
-                                      target={{ step_target | round(0) }} A,
+                                      HOLD RAMP: fresh target={{ step_target | round(0) }} A
+                                      has been reached by current={{ step_current | round(0) }} A;
+                                      house={{ step_total_consumption | round(0) }} W,
                                       W/A={{ step_watts_per_amp | round(1) }}
                                       ({{ step_watts_per_amp_source }}).
                         - stop: Fresh target no longer requires ramp-up
