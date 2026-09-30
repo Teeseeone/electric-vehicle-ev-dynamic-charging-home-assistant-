@@ -39,6 +39,8 @@ Charging current can increase and decrease using different step sizes and delays
 
 v2.4 re-evaluates charging once per minute while idle. It runs in **single** mode so a scheduled one-minute trigger cannot cancel an active ramp. While ramping up, every increase step waits for the configured delay and then re-reads whole-house power plus charger power/current before deciding whether another increase is still safe.
 
+The **Ramp-Up Deadband** is only used to decide whether a *new* upward ramp is worth starting. Once a ramp has started, it continues toward the latest safe target and may use a smaller final step to land exactly on that target.
+
 Default values:
 
 | Setting | Default |
@@ -47,7 +49,7 @@ Default values:
 | Ramp-up step delay | 10 s |
 | Ramp-down step | 2 A |
 | Ramp-down step delay | 10 s |
-| Ramp-up deadband | 1 A |
+| Ramp-up deadband | 1 A (used only to start a new ramp) |
 | Ramp-up stability time | 30 s |
 | Restart lockout | 300 s / 5 min |
 
@@ -393,6 +395,7 @@ Before tagging v2.4, verify:
 - Added configurable minimum, starting, and maximum charging currents
 - Added independent ramp-up and ramp-down settings
 - Added ramp-up deadband and stability checking
+- Changed deadband behavior so it only suppresses starting a new ramp; active ramps now finish at the latest safe target
 - Added a five-minute default restart lockout
 - Fixed the optional location tracker when left empty
 - Added detailed optional Logbook debugging
