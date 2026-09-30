@@ -1,4 +1,4 @@
-# Dynamic EV Charging Automation v3.0 - Tesla Fleet for Home Assistant
+# Dynamic EV Charging Automation v3.1 - Tesla Fleet for Home Assistant
 
 > **Tesla Fleet-focused fork of the original Dynamic EV Charging Automation by [EDV11](https://github.com/EDV11/electric-vehicle-ev-dynamic-charging-home-assistant-).**
 
@@ -9,14 +9,14 @@ It is designed to work especially well with **Tesla Fleet + Tesla Wall Connector
 ## Version status
 
 - **Stable release:** v3.0 Tesla Fleet
-- **Release tag:** `v3.0-Tesla-Fleet`
-- **Previous stable release:** v2.3
+- **Stable tag:** `v3.0-Tesla-Fleet`
+- **Development build:** v3.1 Tesla Fleet on `main`
 
-v3.0 Tesla Fleet is the current stable release.
+v3.1 adds whole-house power sensor failsafe handling. The stable v3.0 tag remains unchanged.
 
 ---
 
-## Highlights in v3.0
+## Highlights in v3.1
 
 ### Tesla Fleet start/stop support
 
@@ -34,11 +34,39 @@ switch.turn_off → stop charging
 
 Tesla Fleet commands already wake the vehicle automatically when required.
 
+### Whole-house power failsafe
+
+v3.1 no longer treats an unavailable or invalid whole-house power sensor as `0 W`.
+
+Default behavior:
+
+```text
+Whole-house power invalid/unavailable
+→ immediately block ramp-up and charging start
+→ hold the current charging setting during the grace period
+
+Still invalid after 120 seconds
+→ cap an already-active charging session to 10 A
+→ never increase current while failsafe is active
+
+Valid fresh house power returns
+→ normal dynamic control resumes
+```
+
+Both values are configurable:
+
+| Setting | Default |
+| --- | ---: |
+| Whole-House Power Failsafe Current | 10 A |
+| Whole-House Power Failsafe Timeout | 120 s / 2 min |
+
+The failsafe current is a **cap**, not a target: if charging is already below 10 A, v3.1 does not increase it to 10 A. A stopped vehicle is not started while house-power telemetry is invalid.
+
 ### Independent ramp-up and ramp-down
 
 Charging current can increase and decrease using different step sizes and delays.
 
-v3.0 re-evaluates charging once per minute while idle. It runs in **single** mode so a scheduled one-minute trigger cannot cancel an active ramp. While ramping up, every increase step waits for the configured delay and then re-reads whole-house power plus charger power/current before deciding whether another increase is still safe.
+v3.1 re-evaluates charging once per minute while idle. It runs in **single** mode so a scheduled one-minute trigger cannot cancel an active ramp. While ramping up, every increase step waits for the configured delay and then re-reads whole-house power plus charger power/current before deciding whether another increase is still safe.
 
 The **Ramp-Up Deadband** is only used to decide whether a *new* upward ramp is worth starting. The configured value is the minimum upward difference required to start a ramp, so with a 1 A deadband an increase from 18 A to 19 A is allowed. Once a ramp has started, it continues toward the latest safe target and may use a smaller final step to land exactly on that target.
 
@@ -56,7 +84,7 @@ Default values:
 
 ### One Maximum Grid Draw limit
 
-v3.0 removes the old separate day/night limits and schedules.
+v3.1 removes the old separate day/night limits and schedules.
 
 You now configure one value:
 
@@ -78,7 +106,7 @@ These are used when measured charger power/current are unavailable.
 
 ### Measured charger power and current
 
-v3.0 can use local charger measurements for more accurate control.
+v3.1 can use local charger measurements for more accurate control.
 
 When both are available:
 
@@ -169,6 +197,7 @@ Messages are written to the Home Assistant Logbook and can include:
 - ramp-up / ramp-down decisions
 - deadband holds
 - restart lockout status
+- whole-house power failsafe pending/active status
 - start command status
 
 Example:
@@ -291,6 +320,10 @@ Ramp-up deadband:           1 A
 Ramp-up stability time:     30 s
 
 Restart lockout:            300 s / 5 min
+
+Failsafe current:           10 A
+Failsafe timeout:           120 s / 2 min
+
 Debug logging:              On while testing
 ```
 
@@ -314,9 +347,9 @@ GitHub release:
 https://github.com/Teeseeone/electric-vehicle-ev-dynamic-charging-home-assistant-/releases/tag/v3.0-Tesla-Fleet
 ```
 
-### Development build
+### Development v3.1
 
-Use `main` only when testing unreleased changes:
+Use `main` to test the v3.1 failsafe changes before the next release:
 
 ```text
 https://raw.githubusercontent.com/Teeseeone/electric-vehicle-ev-dynamic-charging-home-assistant-/main/Dynamic-EV-Charging-Automation.yaml
@@ -329,7 +362,7 @@ In Home Assistant:
 3. Paste the URL.
 4. Preview the blueprint.
 5. Import or override the existing blueprint.
-6. Open the automation and verify all v3.0 inputs.
+6. Open the automation and verify all v3.1 inputs.
 
 ---
 
@@ -379,13 +412,14 @@ The location tracker is optional.
 - For shared chargers, configure both **Charger Vehicle Connected Sensor** and **Target EV Charge Cable Sensor**. If either configured gate is not ON, the blueprint sends no EV charging commands.
 - The target-EV cable sensor comes from vehicle telemetry and may update more slowly than local Wall Connector data, so this reduces shared-charger risk but cannot cryptographically identify the vehicle connected to the Wall Connector.
 - Reading these Home Assistant sensor states does not itself send extra Tesla commands; Tesla Fleet commands are only sent when the blueprint changes charging current or start/stop state.
+- If the whole-house power sensor becomes invalid, v3.1 blocks ramp-up immediately. After the configured timeout it caps an active charge session to the configured failsafe current rather than assuming the house is using 0 W.
 - Keep Debug Logging enabled during initial testing.
 
 ---
 
-## v3.0 validation checklist
+## v3.1 failsafe test checklist
 
-The v3.0 Tesla Fleet release was validated against:
+Before releasing v3.1, verify the existing dynamic-control behavior plus:
 
 - charging starts successfully
 - starting current is applied correctly
@@ -399,10 +433,26 @@ The v3.0 Tesla Fleet release was validated against:
 - restart lockout lasts the configured time
 - completed/disconnected charging is not restarted
 - optional location tracker works both filled and empty
+- house-power sensor becoming unavailable immediately blocks further ramp-up
+- invalid house-power telemetry for less than the timeout holds the current setting
+- invalid/stale telemetry for the full timeout caps active charging at the failsafe current
+- charging below the failsafe current is never increased by failsafe mode
+- a stopped vehicle is not started while house-power telemetry is invalid
+- normal dynamic control resumes after valid fresh house-power telemetry returns
 
 ---
 
 ## Version history
+
+### v3.1 Tesla Fleet — development
+
+- Added configurable whole-house power failsafe current (default 10 A)
+- Added configurable whole-house power failsafe timeout (default 120 seconds / 2 minutes)
+- Invalid/unavailable house-power telemetry immediately blocks charging start and ramp-up
+- After the timeout, an already-active charging session is capped to the failsafe current
+- Failsafe mode never raises a lower charging current
+- Added house-power freshness checks after stability delays and before every ramp-up step
+- Prevented invalid house-power states from being interpreted as 0 W
 
 ### v3.0 Tesla Fleet — stable
 
