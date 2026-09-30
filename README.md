@@ -90,7 +90,7 @@ The measured W/A value is preferred over the theoretical supply formula.
 
 Measured charger watts are only counted as active EV load while the charger state is
 `charging`, `charging_reduced`, or `starting`. This prevents a stale charger-power
-reading immediately after charging stops from artificially inflating the EV power budget budget.
+reading immediately after charging stops from artificially inflating the EV power budget.
 
 If either sensor is unavailable or zero, the blueprint automatically falls back to the selected supply type.
 
@@ -161,9 +161,10 @@ Enable **Debug Logging** while testing.
 Messages are written to the Home Assistant Logbook and can include:
 
 - current whole-house power
+- `grid_headroom`: Maximum Grid Draw minus current whole-house power
 - charger power source: measured or estimated
 - W/A source: measured or theoretical
-- available charging power
+- `EV_budget`: maximum charger power currently available after subtracting non-EV household load
 - calculated target current
 - ramp-up / ramp-down decisions
 - deadband holds
