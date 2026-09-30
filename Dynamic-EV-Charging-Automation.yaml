@@ -13,6 +13,7 @@ blueprint:
     - Optional local charger status, power, current, and vehicle-connected sensors.
     - Optional target-EV charge-cable safety gate for shared chargers.
     - Measured **W/A calibration** when both charger power and charger current are available.
+    - Ignores stale measured charger watts after charging stops or enters an idle state.
     - Configurable starting charging current.
     - Ramp-up deadband, initial stability check, and fresh power checks before every increase step.
     - Fixed one-minute idle re-evaluation with single-run control so scheduled triggers cannot interrupt an active ramp.
@@ -412,10 +413,12 @@ action:
         {% endif %}
 
       charger_consumption: >-
-        {% if charger_power_source == 'measured' %}
-          {{ measured_charger_power | float(0) }}
-        {% elif charging_state in ['charging', 'charging_reduced', 'starting'] %}
-          {{ (charging_current_value | float(0)) * (watts_per_amp | float(230)) }}
+        {% if charging_state in ['charging', 'charging_reduced', 'starting'] %}
+          {% if charger_power_source == 'measured' %}
+            {{ measured_charger_power | float(0) }}
+          {% else %}
+            {{ (charging_current_value | float(0)) * (watts_per_amp | float(230)) }}
+          {% endif %}
         {% else %}
           0
         {% endif %}
@@ -725,10 +728,12 @@ action:
                         {{ states(sensor_charging_entity) | lower }}
                       {% endif %}
                     step_charger_consumption: >-
-                      {% if (step_measured_charger_power | float(0)) > 0 %}
-                        {{ step_measured_charger_power | float(0) }}
-                      {% elif step_charging_state in ['charging', 'charging_reduced', 'starting'] %}
-                        {{ (step_current | float(0)) * (step_watts_per_amp | float(230)) }}
+                      {% if step_charging_state in ['charging', 'charging_reduced', 'starting'] %}
+                        {% if (step_measured_charger_power | float(0)) > 0 %}
+                          {{ step_measured_charger_power | float(0) }}
+                        {% else %}
+                          {{ (step_current | float(0)) * (step_watts_per_amp | float(230)) }}
+                        {% endif %}
                       {% else %}
                         0
                       {% endif %}
@@ -975,11 +980,13 @@ action:
         {% endif %}
       confirmed_current: "{{ states(charging_current_entity) | float(0) }}"
       confirmed_charger_consumption: >-
-        {% if charger_power_sensor_input not in [none, '', 'none']
-              and (states(charger_power_sensor_input) | float(0)) > 0 %}
-          {{ states(charger_power_sensor_input) | float(0) }}
-        {% elif confirmed_charging_state in ['charging', 'charging_reduced', 'starting'] %}
-          {{ (confirmed_current | float(0)) * (watts_per_amp | float(230)) }}
+        {% if confirmed_charging_state in ['charging', 'charging_reduced', 'starting'] %}
+          {% if charger_power_sensor_input not in [none, '', 'none']
+                and (states(charger_power_sensor_input) | float(0)) > 0 %}
+            {{ states(charger_power_sensor_input) | float(0) }}
+          {% else %}
+            {{ (confirmed_current | float(0)) * (watts_per_amp | float(230)) }}
+          {% endif %}
         {% else %}
           0
         {% endif %}
@@ -1053,10 +1060,12 @@ action:
                         {{ states(sensor_charging_entity) | lower }}
                       {% endif %}
                     step_charger_consumption: >-
-                      {% if (step_measured_charger_power | float(0)) > 0 %}
-                        {{ step_measured_charger_power | float(0) }}
-                      {% elif step_charging_state in ['charging', 'charging_reduced', 'starting'] %}
-                        {{ (step_current | float(0)) * (step_watts_per_amp | float(230)) }}
+                      {% if step_charging_state in ['charging', 'charging_reduced', 'starting'] %}
+                        {% if (step_measured_charger_power | float(0)) > 0 %}
+                          {{ step_measured_charger_power | float(0) }}
+                        {% else %}
+                          {{ (step_current | float(0)) * (step_watts_per_amp | float(230)) }}
+                        {% endif %}
                       {% else %}
                         0
                       {% endif %}
