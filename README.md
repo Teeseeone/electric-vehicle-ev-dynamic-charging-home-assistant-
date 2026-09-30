@@ -1,4 +1,4 @@
-# Dynamic EV Charging Automation for Home Assistant
+# Dynamic EV Charging Automation v3.0 - Tesla Fleet for Home Assistant
 
 > **Tesla Fleet-focused fork of the original Dynamic EV Charging Automation by [EDV11](https://github.com/EDV11/electric-vehicle-ev-dynamic-charging-home-assistant-).**
 
@@ -9,13 +9,13 @@ It is designed to work especially well with **Tesla Fleet + Tesla Wall Connector
 ## Version status
 
 - **Stable release:** v2.3
-- **Release candidate:** v2.4 on `main`
+- **Release candidate:** v3.0 Tesla Fleet on `main`
 
-v2.4 should be tested in Home Assistant before the release tag is created.
+v3.0 Tesla Fleet is the current test build. Create the release tag only after the final real-world charging tests pass.
 
 ---
 
-## Highlights in v2.4
+## Highlights in v3.0
 
 ### Tesla Fleet start/stop support
 
@@ -37,9 +37,9 @@ Tesla Fleet commands already wake the vehicle automatically when required.
 
 Charging current can increase and decrease using different step sizes and delays.
 
-v2.4 re-evaluates charging once per minute while idle. It runs in **single** mode so a scheduled one-minute trigger cannot cancel an active ramp. While ramping up, every increase step waits for the configured delay and then re-reads whole-house power plus charger power/current before deciding whether another increase is still safe.
+v3.0 re-evaluates charging once per minute while idle. It runs in **single** mode so a scheduled one-minute trigger cannot cancel an active ramp. While ramping up, every increase step waits for the configured delay and then re-reads whole-house power plus charger power/current before deciding whether another increase is still safe.
 
-The **Ramp-Up Deadband** is only used to decide whether a *new* upward ramp is worth starting. Once a ramp has started, it continues toward the latest safe target and may use a smaller final step to land exactly on that target.
+The **Ramp-Up Deadband** is only used to decide whether a *new* upward ramp is worth starting. The configured value is the minimum upward difference required to start a ramp, so with a 1 A deadband an increase from 18 A to 19 A is allowed. Once a ramp has started, it continues toward the latest safe target and may use a smaller final step to land exactly on that target.
 
 Default values:
 
@@ -55,7 +55,7 @@ Default values:
 
 ### One Maximum Grid Draw limit
 
-v2.4 removes the old separate day/night limits and schedules.
+v3.0 removes the old separate day/night limits and schedules.
 
 You now configure one value:
 
@@ -77,7 +77,7 @@ These are used when measured charger power/current are unavailable.
 
 ### Measured charger power and current
 
-v2.4 can use local charger measurements for more accurate control.
+v3.0 can use local charger measurements for more accurate control.
 
 When both are available:
 
@@ -89,7 +89,7 @@ The measured W/A value is preferred over the theoretical supply formula.
 
 Measured charger watts are only counted as active EV load while the charger state is
 `charging`, `charging_reduced`, or `starting`. This prevents a stale charger-power
-reading immediately after charging stops from artificially inflating the available EV power budget.
+reading immediately after charging stops from artificially inflating the EV power budget budget.
 
 If either sensor is unavailable or zero, the blueprint automatically falls back to the selected supply type.
 
@@ -235,14 +235,14 @@ non-EV load = whole-house power - actual charger power
 Then:
 
 ```text
-available EV power = Maximum Grid Draw - non-EV load
+EV power budget = Maximum Grid Draw - non-EV load
 ```
 
 If measured charger power and measured charger current are both valid:
 
 ```text
 real W/A = measured charger power / measured charger current
-target current = available EV power / real W/A
+target current = EV power budget / real W/A
 ```
 
 Otherwise, the selected electrical supply preset is used as the W/A fallback.
@@ -293,7 +293,7 @@ Manual URL:
 https://raw.githubusercontent.com/Teeseeone/electric-vehicle-ev-dynamic-charging-home-assistant-/v2.3/Dynamic-EV-Charging-Automation.yaml
 ```
 
-### Test v2.4 release candidate
+### Test v3.0 release candidate
 
 Use the current `main` branch:
 
@@ -308,7 +308,7 @@ In Home Assistant:
 3. Paste the URL.
 4. Preview the blueprint.
 5. Import or override the existing blueprint.
-6. Open the automation and verify all v2.4 inputs.
+6. Open the automation and verify all v3.0 inputs.
 
 ---
 
@@ -362,9 +362,9 @@ The location tracker is optional.
 
 ---
 
-## v2.4 release checklist
+## v3.0 release checklist
 
-Before tagging v2.4, verify:
+Before tagging v3.0, verify:
 
 - charging starts successfully
 - starting current is applied correctly
@@ -383,7 +383,7 @@ Before tagging v2.4, verify:
 
 ## Version history
 
-### v2.4 — release candidate
+### v3.0 Tesla Fleet — release candidate
 
 - Added 230 V single-phase, 230 V three-phase, and 400 V three-phase supply presets
 - Simplified power limiting to one **Maximum Grid Draw** value
@@ -395,7 +395,7 @@ Before tagging v2.4, verify:
 - Added configurable minimum, starting, and maximum charging currents
 - Added independent ramp-up and ramp-down settings
 - Added ramp-up deadband and stability checking
-- Changed deadband behavior so it only suppresses starting a new ramp; active ramps now finish at the latest safe target
+- Changed deadband behavior so it is the minimum difference required to start a new ramp; a 1 A difference starts when deadband is 1 A, and active ramps finish at the latest safe target
 - Added a five-minute default restart lockout
 - Fixed the optional location tracker when left empty
 - Added detailed optional Logbook debugging
