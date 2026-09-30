@@ -711,9 +711,25 @@ action:
               seconds: "{{ ramp_up_stability_seconds | int }}"
 
           - variables:
-              confirmed_total_consumption: "{{ states(sensor_house_power_entity) | float(0) }}"
+              confirmed_house_power_state: "{{ states(sensor_house_power_entity) }}"
+              confirmed_house_power_age_seconds: >-
+                {% set power_state = states[sensor_house_power_entity] %}
+                {{ [0, as_timestamp(now()) - as_timestamp(power_state.last_updated)] | max }}
+              confirmed_house_power_numeric: "{{ is_number(confirmed_house_power_state) }}"
+              confirmed_house_power_usable: >-
+                {{ confirmed_house_power_numeric
+                   and (confirmed_house_power_age_seconds | float(999999))
+                       <= (failsafe_timeout_seconds | float(120)) }}
+              confirmed_total_consumption: >-
+                {% if confirmed_house_power_numeric %}
+                  {{ confirmed_house_power_state | float(0) }}
+                {% else %}
+                  0
+                {% endif %}
+              confirmed_grid_headroom: >-
+                {{ (active_grid_limit | float(0)) - (confirmed_total_consumption | float(0)) }}
               confirmed_free_power: >-
-                {% set candidate = (active_grid_limit | float(0)) - (states(sensor_house_power_entity) | float(0)) %}
+                {% set candidate = (active_grid_limit | float(0)) - (confirmed_total_consumption | float(0)) %}
                 {% set bounded = [candidate, (active_grid_limit | float(0))] | min %}
                 {{ [0, bounded] | max }}
               confirmed_target: >-
@@ -729,6 +745,25 @@ action:
                 {{ [starting_amps | float, confirmed_target | float, max_amps | float] | min }}
 
           - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ not confirmed_house_power_usable }}"
+                sequence:
+                  - choose:
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ debug_logging }}"
+                        sequence:
+                          - action: logbook.log
+                            data:
+                              name: Dynamic EV Charging v3.1 - Tesla Fleet
+                              entity_id: !input charging_current
+                              message: >-
+                                HOLD RESTART: whole-house power state='{{ confirmed_house_power_state }}',
+                                age={{ confirmed_house_power_age_seconds | round(0) }} s.
+                                Charging start is blocked until valid fresh house power returns.
+                  - stop: Whole-house power invalid after restart stability delay
+
               - conditions:
                   - condition: template
                     value_template: "{{ (confirmed_target | float(0)) >= (min_amps | float) }}"
@@ -816,7 +851,21 @@ action:
 
                 - variables:
                     step_current: "{{ states(charging_current_entity) | float(0) }}"
-                    step_total_consumption: "{{ states(sensor_house_power_entity) | float(0) }}"
+                    step_house_power_state: "{{ states(sensor_house_power_entity) }}"
+                    step_house_power_age_seconds: >-
+                      {% set power_state = states[sensor_house_power_entity] %}
+                      {{ [0, as_timestamp(now()) - as_timestamp(power_state.last_updated)] | max }}
+                    step_house_power_numeric: "{{ is_number(step_house_power_state) }}"
+                    step_house_power_usable: >-
+                      {{ step_house_power_numeric
+                         and (step_house_power_age_seconds | float(999999))
+                             <= (failsafe_timeout_seconds | float(120)) }}
+                    step_total_consumption: >-
+                      {% if step_house_power_numeric %}
+                        {{ step_house_power_state | float(0) }}
+                      {% else %}
+                        0
+                      {% endif %}
                     step_grid_headroom: >-
                       {{ (active_grid_limit | float(0)) - (step_total_consumption | float(0)) }}
                     step_measured_charger_power: >-
@@ -887,6 +936,26 @@ action:
                          or is_state(target_ev_charge_cable_sensor_input, 'on') }}
 
                 - choose:
+                    - conditions:
+                        - condition: template
+                          value_template: "{{ not step_house_power_usable }}"
+                      sequence:
+                        - choose:
+                            - conditions:
+                                - condition: template
+                                  value_template: "{{ debug_logging }}"
+                              sequence:
+                                - action: logbook.log
+                                  data:
+                                    name: Dynamic EV Charging v3.1 - Tesla Fleet
+                                    entity_id: !input charging_current
+                                    message: >-
+                                      HOLD RAMP: whole-house power state='{{ step_house_power_state }}',
+                                      age={{ step_house_power_age_seconds | round(0) }} s.
+                                      No ramp-up command sent; normal control will resume
+                                      when valid fresh house power returns.
+                        - stop: Whole-house power became invalid during ramp-up
+
                     - conditions:
                         - condition: template
                           value_template: >-
@@ -1103,7 +1172,21 @@ action:
       seconds: "{{ ramp_up_stability_seconds | int }}"
 
   - variables:
-      confirmed_total_consumption: "{{ states(sensor_house_power_entity) | float(0) }}"
+      confirmed_house_power_state: "{{ states(sensor_house_power_entity) }}"
+      confirmed_house_power_age_seconds: >-
+        {% set power_state = states[sensor_house_power_entity] %}
+        {{ [0, as_timestamp(now()) - as_timestamp(power_state.last_updated)] | max }}
+      confirmed_house_power_numeric: "{{ is_number(confirmed_house_power_state) }}"
+      confirmed_house_power_usable: >-
+        {{ confirmed_house_power_numeric
+           and (confirmed_house_power_age_seconds | float(999999))
+               <= (failsafe_timeout_seconds | float(120)) }}
+      confirmed_total_consumption: >-
+        {% if confirmed_house_power_numeric %}
+          {{ confirmed_house_power_state | float(0) }}
+        {% else %}
+          0
+        {% endif %}
       confirmed_grid_headroom: >-
         {{ (active_grid_limit | float(0)) - (confirmed_total_consumption | float(0)) }}
       confirmed_charging_state: >-
@@ -1141,6 +1224,25 @@ action:
         {% endif %}
 
   - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ not confirmed_house_power_usable }}"
+        sequence:
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ debug_logging }}"
+                sequence:
+                  - action: logbook.log
+                    data:
+                      name: Dynamic EV Charging v3.1 - Tesla Fleet
+                      entity_id: !input charging_current
+                      message: >-
+                        HOLD AFTER STABILITY CHECK: whole-house power state='{{ confirmed_house_power_state }}',
+                        age={{ confirmed_house_power_age_seconds | round(0) }} s.
+                        No ramp-up command sent; current charging setting is held.
+          - stop: Whole-house power invalid after ramp-up stability delay
+
       - conditions:
           - condition: template
             value_template: "{{ (confirmed_target | float(0)) < (min_amps | float(0)) }}"
@@ -1238,7 +1340,21 @@ action:
 
                 - variables:
                     step_current: "{{ states(charging_current_entity) | float(0) }}"
-                    step_total_consumption: "{{ states(sensor_house_power_entity) | float(0) }}"
+                    step_house_power_state: "{{ states(sensor_house_power_entity) }}"
+                    step_house_power_age_seconds: >-
+                      {% set power_state = states[sensor_house_power_entity] %}
+                      {{ [0, as_timestamp(now()) - as_timestamp(power_state.last_updated)] | max }}
+                    step_house_power_numeric: "{{ is_number(step_house_power_state) }}"
+                    step_house_power_usable: >-
+                      {{ step_house_power_numeric
+                         and (step_house_power_age_seconds | float(999999))
+                             <= (failsafe_timeout_seconds | float(120)) }}
+                    step_total_consumption: >-
+                      {% if step_house_power_numeric %}
+                        {{ step_house_power_state | float(0) }}
+                      {% else %}
+                        0
+                      {% endif %}
                     step_grid_headroom: >-
                       {{ (active_grid_limit | float(0)) - (step_total_consumption | float(0)) }}
                     step_measured_charger_power: >-
@@ -1309,6 +1425,26 @@ action:
                          or is_state(target_ev_charge_cable_sensor_input, 'on') }}
 
                 - choose:
+                    - conditions:
+                        - condition: template
+                          value_template: "{{ not step_house_power_usable }}"
+                      sequence:
+                        - choose:
+                            - conditions:
+                                - condition: template
+                                  value_template: "{{ debug_logging }}"
+                              sequence:
+                                - action: logbook.log
+                                  data:
+                                    name: Dynamic EV Charging v3.1 - Tesla Fleet
+                                    entity_id: !input charging_current
+                                    message: >-
+                                      HOLD RAMP: whole-house power state='{{ step_house_power_state }}',
+                                      age={{ step_house_power_age_seconds | round(0) }} s.
+                                      No ramp-up command sent; normal control will resume
+                                      when valid fresh house power returns.
+                        - stop: Whole-house power became invalid during ramp-up
+
                     - conditions:
                         - condition: template
                           value_template: >-
