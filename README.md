@@ -226,6 +226,16 @@ Maximum Grid Draw
 
 It reads the current whole-house load and determines how much of that load belongs to the EV.
 
+Two useful values are exposed in debug logs:
+
+```text
+grid_headroom = Maximum Grid Draw - current whole-house power
+EV_budget     = Maximum Grid Draw - current non-EV household load
+```
+
+`grid_headroom` shows how far the house is currently below or above the configured limit.
+`EV_budget` shows how many watts the charger is allowed to use while respecting that same limit.
+
 When an actual charger-power sensor is available:
 
 ```text
@@ -398,7 +408,7 @@ Before tagging v3.0, verify:
 - Changed deadband behavior so it is the minimum difference required to start a new ramp; a 1 A difference starts when deadband is 1 A, and active ramps finish at the latest safe target
 - Added a five-minute default restart lockout
 - Fixed the optional location tracker when left empty
-- Added detailed optional Logbook debugging
+- Added detailed optional Logbook debugging, including both `grid_headroom` and `EV_budget`
 - Added explicit start-command logging and documented Tesla Fleet automatic wake behavior
 - Added shared-charger safety gates using local vehicle-connected and target-EV charge-cable sensors
 - Labelled blueprint entity inputs as **[CAR]**, **[CHARGER]**, **[HOUSE]**, or **[CAR/PERSON]** so the intended source is obvious
