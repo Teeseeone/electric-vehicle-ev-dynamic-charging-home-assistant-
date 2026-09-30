@@ -375,6 +375,8 @@ action:
         {% endif %}
       charging_current_value: "{{ states(charging_current_entity) | float(0) }}"
       total_consumption: "{{ states(sensor_house_power_entity) | float(0) }}"
+      grid_headroom: >-
+        {{ (active_grid_limit | float(0)) - (total_consumption | float(0)) }}
 
       measured_charger_power: >-
         {% if charger_power_sensor_input not in [none, '', 'none'] %}
@@ -550,6 +552,7 @@ action:
                       entity_id: !input charging_current
                       message: >-
                         STOP: house={{ total_consumption | round(0) }} W,
+                        grid_headroom={{ grid_headroom | round(0) }} W,
                         charger={{ charger_consumption | round(0) }} W ({{ charger_power_source }}),
                         W/A={{ watts_per_amp | round(1) }} ({{ watts_per_amp_source }}),
                         limit={{ active_grid_limit | round(0) }} W,
@@ -662,7 +665,9 @@ action:
                               name: Dynamic EV Charging v3.0 - Tesla Fleet
                               entity_id: !input charging_current
                               message: >-
-                                RESTART: stable EV budget={{ confirmed_free_power | round(0) }} W,
+                                RESTART: house={{ confirmed_total_consumption | round(0) }} W,
+                                grid_headroom={{ confirmed_grid_headroom | round(0) }} W,
+                                stable EV budget={{ confirmed_free_power | round(0) }} W,
                                 confirmed target={{ confirmed_target | round(0) }} A.
             default:
               - choose:
@@ -693,6 +698,8 @@ action:
                 - variables:
                     step_current: "{{ states(charging_current_entity) | float(0) }}"
                     step_total_consumption: "{{ states(sensor_house_power_entity) | float(0) }}"
+                    step_grid_headroom: >-
+                      {{ (active_grid_limit | float(0)) - (step_total_consumption | float(0)) }}
                     step_measured_charger_power: >-
                       {% if charger_power_sensor_input not in [none, '', 'none'] %}
                         {{ states(charger_power_sensor_input) | float(0) }}
@@ -847,6 +854,7 @@ action:
                                     entity_id: !input charging_current
                                     message: >-
                                       RAMP REVERSED: fresh house={{ step_total_consumption | round(0) }} W,
+                                      grid_headroom={{ step_grid_headroom | round(0) }} W,
                                       fresh target={{ step_target | round(0) }} A.
                         - stop: Fresh power reading requires ramp-down
 
@@ -869,6 +877,7 @@ action:
                                       HOLD RAMP: fresh target={{ step_target | round(0) }} A
                                       has been reached by current={{ step_current | round(0) }} A;
                                       house={{ step_total_consumption | round(0) }} W,
+                                      grid_headroom={{ step_grid_headroom | round(0) }} W,
                                       W/A={{ step_watts_per_amp | round(1) }}
                                       ({{ step_watts_per_amp_source }}).
                         - stop: Fresh target no longer requires ramp-up
@@ -893,6 +902,7 @@ action:
                                 entity_id: !input charging_current
                                 message: >-
                                   RAMP UP STEP: house={{ step_total_consumption | round(0) }} W,
+                                  grid_headroom={{ step_grid_headroom | round(0) }} W,
                                   EV_budget={{ step_free_power | round(0) }} W,
                                   current={{ step_current | round(0) }} A,
                                   target={{ step_target | round(0) }} A,
@@ -937,6 +947,7 @@ action:
                       entity_id: !input charging_current
                       message: >-
                         RAMP DOWN: house={{ total_consumption | round(0) }} W,
+                        grid_headroom={{ grid_headroom | round(0) }} W,
                         charger={{ charger_consumption | round(0) }} W ({{ charger_power_source }}),
                         W/A={{ watts_per_amp | round(1) }} ({{ watts_per_amp_source }}),
                         EV_budget={{ actual_free_power | round(0) }} W,
@@ -973,6 +984,8 @@ action:
 
   - variables:
       confirmed_total_consumption: "{{ states(sensor_house_power_entity) | float(0) }}"
+      confirmed_grid_headroom: >-
+        {{ (active_grid_limit | float(0)) - (confirmed_total_consumption | float(0)) }}
       confirmed_charging_state: >-
         {% if charger_status_sensor_input not in [none, '', 'none']
               and states(charger_status_sensor_input) | lower not in ['unknown', 'unavailable', 'none', ''] %}
@@ -1027,6 +1040,8 @@ action:
                 - variables:
                     step_current: "{{ states(charging_current_entity) | float(0) }}"
                     step_total_consumption: "{{ states(sensor_house_power_entity) | float(0) }}"
+                    step_grid_headroom: >-
+                      {{ (active_grid_limit | float(0)) - (step_total_consumption | float(0)) }}
                     step_measured_charger_power: >-
                       {% if charger_power_sensor_input not in [none, '', 'none'] %}
                         {{ states(charger_power_sensor_input) | float(0) }}
@@ -1181,6 +1196,7 @@ action:
                                     entity_id: !input charging_current
                                     message: >-
                                       RAMP REVERSED: fresh house={{ step_total_consumption | round(0) }} W,
+                                      grid_headroom={{ step_grid_headroom | round(0) }} W,
                                       fresh target={{ step_target | round(0) }} A.
                         - stop: Fresh power reading requires ramp-down
 
@@ -1203,6 +1219,7 @@ action:
                                       HOLD RAMP: fresh target={{ step_target | round(0) }} A
                                       has been reached by current={{ step_current | round(0) }} A;
                                       house={{ step_total_consumption | round(0) }} W,
+                                      grid_headroom={{ step_grid_headroom | round(0) }} W,
                                       W/A={{ step_watts_per_amp | round(1) }}
                                       ({{ step_watts_per_amp_source }}).
                         - stop: Fresh target no longer requires ramp-up
@@ -1227,6 +1244,7 @@ action:
                                 entity_id: !input charging_current
                                 message: >-
                                   RAMP UP STEP: house={{ step_total_consumption | round(0) }} W,
+                                  grid_headroom={{ step_grid_headroom | round(0) }} W,
                                   EV_budget={{ step_free_power | round(0) }} W,
                                   current={{ step_current | round(0) }} A,
                                   target={{ step_target | round(0) }} A,
