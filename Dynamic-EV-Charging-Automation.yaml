@@ -1,11 +1,11 @@
 blueprint:
-  name: Dynamic EV Charging Automation v2.4
+  name: Dynamic EV Charging Automation v3.0 - Tesla Fleet
   description: |
-    ## Dynamic EV Charging Automation v2.4
+    ## Dynamic EV Charging Automation v3.0 - Tesla Fleet
 
     Tesla Fleet-focused fork of the original Dynamic EV Charging Automation.
 
-    ### What's new in v2.4
+    ### What's new in v3.0
     - Direct Tesla Fleet start/stop support through `switch` entities.
     - Independent ramp-up and ramp-down step sizes and delays.
     - Single-phase 230 V, three-phase 230 V, and three-phase 400 V supply presets.
@@ -474,7 +474,7 @@ action:
                 sequence:
                   - action: logbook.log
                     data:
-                      name: Dynamic EV Charging v2.4
+                      name: Dynamic EV Charging v3.0 - Tesla Fleet
                       entity_id: !input sensor_charging
                       message: >-
                         HOLD: local charger does not report a vehicle connected.
@@ -492,7 +492,7 @@ action:
                 sequence:
                   - action: logbook.log
                     data:
-                      name: Dynamic EV Charging v2.4
+                      name: Dynamic EV Charging v3.0 - Tesla Fleet
                       entity_id: !input sensor_charging
                       message: >-
                         HOLD: target EV charge-cable sensor is not ON.
@@ -512,7 +512,7 @@ action:
                 sequence:
                   - action: logbook.log
                     data:
-                      name: Dynamic EV Charging v2.4
+                      name: Dynamic EV Charging v3.0 - Tesla Fleet
                       entity_id: !input sensor_charging
                       message: >-
                         HOLD: charging state '{{ charging_state }}' is not eligible for dynamic control.
@@ -546,14 +546,14 @@ action:
                 sequence:
                   - action: logbook.log
                     data:
-                      name: Dynamic EV Charging v2.4
+                      name: Dynamic EV Charging v3.0 - Tesla Fleet
                       entity_id: !input charging_current
                       message: >-
                         STOP: house={{ total_consumption | round(0) }} W,
                         charger={{ charger_consumption | round(0) }} W ({{ charger_power_source }}),
                         W/A={{ watts_per_amp | round(1) }} ({{ watts_per_amp_source }}),
                         limit={{ active_grid_limit | round(0) }} W,
-                        free={{ actual_free_power | round(0) }} W,
+                        EV_budget={{ actual_free_power | round(0) }} W,
                         target=0 A, state={{ charging_state }}.
           - stop: Not enough power to charge above the minimum current
 
@@ -579,7 +579,7 @@ action:
                         sequence:
                           - action: logbook.log
                             data:
-                              name: Dynamic EV Charging v2.4
+                              name: Dynamic EV Charging v3.0 - Tesla Fleet
                               entity_id: !input sensor_charging
                               message: >-
                                 WAIT TO RESTART: stopped for {{ stopped_seconds | int }} s;
@@ -640,7 +640,7 @@ action:
                         sequence:
                           - action: logbook.log
                             data:
-                              name: Dynamic EV Charging v2.4
+                              name: Dynamic EV Charging v3.0 - Tesla Fleet
                               entity_id: !input charging_current
                               message: >-
                                 {% if charger_toggle_entity.startswith('switch.') %}
@@ -659,10 +659,10 @@ action:
                         sequence:
                           - action: logbook.log
                             data:
-                              name: Dynamic EV Charging v2.4
+                              name: Dynamic EV Charging v3.0 - Tesla Fleet
                               entity_id: !input charging_current
                               message: >-
-                                RESTART: stable free power={{ confirmed_free_power | round(0) }} W,
+                                RESTART: stable EV budget={{ confirmed_free_power | round(0) }} W,
                                 confirmed target={{ confirmed_target | round(0) }} A.
             default:
               - choose:
@@ -672,7 +672,7 @@ action:
                     sequence:
                       - action: logbook.log
                         data:
-                          name: Dynamic EV Charging v2.4
+                          name: Dynamic EV Charging v3.0 - Tesla Fleet
                           entity_id: !input sensor_charging
                           message: >-
                             HOLD STOPPED: power was not still sufficient after
@@ -774,7 +774,7 @@ action:
                               sequence:
                                 - action: logbook.log
                                   data:
-                                    name: Dynamic EV Charging v2.4
+                                    name: Dynamic EV Charging v3.0 - Tesla Fleet
                                     entity_id: !input charging_current
                                     message: >-
                                       HOLD RAMP: connection/state safety check failed;
@@ -806,7 +806,7 @@ action:
                               sequence:
                                 - action: logbook.log
                                   data:
-                                    name: Dynamic EV Charging v2.4
+                                    name: Dynamic EV Charging v3.0 - Tesla Fleet
                                     entity_id: !input charging_current
                                     message: >-
                                       STOP DURING RAMP: fresh house={{ step_total_consumption | round(0) }} W,
@@ -843,7 +843,7 @@ action:
                               sequence:
                                 - action: logbook.log
                                   data:
-                                    name: Dynamic EV Charging v2.4
+                                    name: Dynamic EV Charging v3.0 - Tesla Fleet
                                     entity_id: !input charging_current
                                     message: >-
                                       RAMP REVERSED: fresh house={{ step_total_consumption | round(0) }} W,
@@ -863,7 +863,7 @@ action:
                               sequence:
                                 - action: logbook.log
                                   data:
-                                    name: Dynamic EV Charging v2.4
+                                    name: Dynamic EV Charging v3.0 - Tesla Fleet
                                     entity_id: !input charging_current
                                     message: >-
                                       HOLD RAMP: fresh target={{ step_target | round(0) }} A
@@ -889,11 +889,11 @@ action:
                           sequence:
                             - action: logbook.log
                               data:
-                                name: Dynamic EV Charging v2.4
+                                name: Dynamic EV Charging v3.0 - Tesla Fleet
                                 entity_id: !input charging_current
                                 message: >-
                                   RAMP UP STEP: house={{ step_total_consumption | round(0) }} W,
-                                  free={{ step_free_power | round(0) }} W,
+                                  EV_budget={{ step_free_power | round(0) }} W,
                                   current={{ step_current | round(0) }} A,
                                   target={{ step_target | round(0) }} A,
                                   W/A={{ step_watts_per_amp | round(1) }}
@@ -933,13 +933,13 @@ action:
                 sequence:
                   - action: logbook.log
                     data:
-                      name: Dynamic EV Charging v2.4
+                      name: Dynamic EV Charging v3.0 - Tesla Fleet
                       entity_id: !input charging_current
                       message: >-
                         RAMP DOWN: house={{ total_consumption | round(0) }} W,
                         charger={{ charger_consumption | round(0) }} W ({{ charger_power_source }}),
                         W/A={{ watts_per_amp | round(1) }} ({{ watts_per_amp_source }}),
-                        free={{ actual_free_power | round(0) }} W,
+                        EV_budget={{ actual_free_power | round(0) }} W,
                         target={{ new_target_value | round(0) }} A.
           - stop: Ramp-down completed
 
@@ -948,8 +948,9 @@ action:
       - conditions:
           - condition: template
             value_template: >-
-              {{ (new_target_value | float(0)) <=
-                 ((charging_current_value | float(0)) + (ramp_up_deadband_amps | float(0))) }}
+              {{ (new_target_value | float(0)) <= (charging_current_value | float(0))
+                 or ((new_target_value | float(0)) - (charging_current_value | float(0)))
+                    < (ramp_up_deadband_amps | float(0)) }}
         sequence:
           - choose:
               - conditions:
@@ -958,12 +959,12 @@ action:
                 sequence:
                   - action: logbook.log
                     data:
-                      name: Dynamic EV Charging v2.4
+                      name: Dynamic EV Charging v3.0 - Tesla Fleet
                       entity_id: !input charging_current
                       message: >-
                         HOLD: current={{ charging_current_value | round(0) }} A,
-                        target={{ new_target_value | round(0) }} A is within the
-                        {{ ramp_up_deadband_amps | round(0) }} A ramp-up deadband.
+                        target={{ new_target_value | round(0) }} A; upward difference is below
+                        the {{ ramp_up_deadband_amps | round(0) }} A ramp-start deadband.
           - stop: Target is within ramp-up deadband
 
   # Before ramping up, wait and re-read live house power.
@@ -1008,8 +1009,9 @@ action:
       - conditions:
           - condition: template
             value_template: >-
-              {{ (confirmed_target | float(0)) >
-                 ((confirmed_current | float(0)) + (ramp_up_deadband_amps | float(0))) }}
+              {{ (confirmed_target | float(0)) > (confirmed_current | float(0))
+                 and ((confirmed_target | float(0)) - (confirmed_current | float(0)))
+                     >= (ramp_up_deadband_amps | float(0)) }}
         sequence:
           # Keep one automation run in control of the ramp. Before every increase,
           # wait the configured step delay and recalculate from fresh sensor values.
@@ -1106,7 +1108,7 @@ action:
                               sequence:
                                 - action: logbook.log
                                   data:
-                                    name: Dynamic EV Charging v2.4
+                                    name: Dynamic EV Charging v3.0 - Tesla Fleet
                                     entity_id: !input charging_current
                                     message: >-
                                       HOLD RAMP: connection/state safety check failed;
@@ -1138,7 +1140,7 @@ action:
                               sequence:
                                 - action: logbook.log
                                   data:
-                                    name: Dynamic EV Charging v2.4
+                                    name: Dynamic EV Charging v3.0 - Tesla Fleet
                                     entity_id: !input charging_current
                                     message: >-
                                       STOP DURING RAMP: fresh house={{ step_total_consumption | round(0) }} W,
@@ -1175,7 +1177,7 @@ action:
                               sequence:
                                 - action: logbook.log
                                   data:
-                                    name: Dynamic EV Charging v2.4
+                                    name: Dynamic EV Charging v3.0 - Tesla Fleet
                                     entity_id: !input charging_current
                                     message: >-
                                       RAMP REVERSED: fresh house={{ step_total_consumption | round(0) }} W,
@@ -1195,7 +1197,7 @@ action:
                               sequence:
                                 - action: logbook.log
                                   data:
-                                    name: Dynamic EV Charging v2.4
+                                    name: Dynamic EV Charging v3.0 - Tesla Fleet
                                     entity_id: !input charging_current
                                     message: >-
                                       HOLD RAMP: fresh target={{ step_target | round(0) }} A
@@ -1221,11 +1223,11 @@ action:
                           sequence:
                             - action: logbook.log
                               data:
-                                name: Dynamic EV Charging v2.4
+                                name: Dynamic EV Charging v3.0 - Tesla Fleet
                                 entity_id: !input charging_current
                                 message: >-
                                   RAMP UP STEP: house={{ step_total_consumption | round(0) }} W,
-                                  free={{ step_free_power | round(0) }} W,
+                                  EV_budget={{ step_free_power | round(0) }} W,
                                   current={{ step_current | round(0) }} A,
                                   target={{ step_target | round(0) }} A,
                                   W/A={{ step_watts_per_amp | round(1) }}
@@ -1238,7 +1240,7 @@ action:
                 sequence:
                   - action: logbook.log
                     data:
-                      name: Dynamic EV Charging v2.4
+                      name: Dynamic EV Charging v3.0 - Tesla Fleet
                       entity_id: !input charging_current
                       message: >-
                         RAMP UP COMPLETE: reached Maximum Charging Current
@@ -1251,7 +1253,7 @@ action:
             sequence:
               - action: logbook.log
                 data:
-                  name: Dynamic EV Charging v2.4
+                  name: Dynamic EV Charging v3.0 - Tesla Fleet
                   entity_id: !input charging_current
                   message: >-
                     HOLD AFTER STABILITY CHECK: fresh target={{ confirmed_target | round(0) }} A,
