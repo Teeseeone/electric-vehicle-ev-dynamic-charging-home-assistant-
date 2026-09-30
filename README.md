@@ -85,6 +85,10 @@ watts per amp = actual charger power / actual charger current
 
 The measured W/A value is preferred over the theoretical supply formula.
 
+Measured charger watts are only counted as active EV load while the charger state is
+`charging`, `charging_reduced`, or `starting`. This prevents a stale charger-power
+reading immediately after charging stops from artificially inflating the available EV power budget.
+
 If either sensor is unavailable or zero, the blueprint automatically falls back to the selected supply type.
 
 ### Local charger status
@@ -398,6 +402,7 @@ Before tagging v2.4, verify:
 - Removed the 1/3/5-minute interval selector and standardized idle re-evaluation to once per minute
 - Changed automation execution from `restart` to `single` so scheduled triggers cannot cancel an active ramp
 - Added fresh whole-house and charger re-checks before every ramp-up step; ramp-up halts or reverses if the safe target drops
+- Fixed stale charger-power handling so measured charger watts are ignored when the local charger is no longer actively charging
 
 ### v2.3
 
