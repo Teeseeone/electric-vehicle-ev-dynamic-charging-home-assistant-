@@ -14,6 +14,25 @@ It is designed to work especially well with **Tesla Fleet + Tesla Wall Connector
 
 v3.1 adds whole-house power sensor failsafe handling. The stable v3.0 tag remains unchanged.
 
+**Release readiness: keep v3.1 in development until the items below are resolved and verified.** The review covers the current `main` code, not a live Home Assistant installation. The behavior described below is the intended development behavior; the known limitations here still apply.
+
+## v3.1 review findings and release requirements
+
+### Required before a stable v3.1 release
+
+- [ ] **Separate sensor freshness from invalid-state duration.** The blueprint currently uses `last_updated` for both. Repeated identical valid readings can appear stale because this timestamp changes only when the state or attributes change. Attribute updates during an invalid state can also restart the apparent invalid duration. Use a freshness signal appropriate to the integration and independently track how long telemetry has been invalid. `last_reported` may help when the integration writes every report, but it is not a universal device heartbeat. Handle a missing entity without a template error. See [Home Assistant state timestamps](https://www.home-assistant.io/docs/configuration/state_object/#state-object).
+- [ ] **Recheck all command gates after delays.** The restart path checks connection gates before its stability delay, then checks power before setting current and starting. Recheck local vehicle-connected status, target-EV cable status, eligible charging state, and the optional location restriction immediately before issuing commands. A disconnect or completed session during the delay must prevent a start.
+- [ ] **Refresh the target and gates during ramp-down.** Ramp-down loops retain their original target and do not repeat house-power, failsafe, or connection checks. With default settings, a 20 A to 2 A reduction sequence includes about 90 seconds of delays. New scheduled runs cannot intervene in `single` mode. Recalculate before each reduction, bound loops when command feedback does not progress, and define a faster response for substantial overloads. See [Home Assistant automation modes](https://www.home-assistant.io/docs/automation/modes/).
+- [ ] **Validate measurement units, freshness, and plausibility.** Positive charger-power/current values are currently accepted without freshness or unit checks. Normalize supported units to watts and amps, reject stale or implausible measurements, and bound measured watts per amp before using it. For example, treating a `6.9 kW` reading as `6.9 W` can incorrectly produce a maximum-current target. Validate whole-house power units too.
+- [ ] **Validate current settings together and against the control entity.** Reject minimum current above maximum current, respect the number entity's minimum/maximum/step, and ensure the starting request is at least the effective minimum without exceeding the safe target. Currently, minimum=10 A, starting=6 A, and safe target=14 A still produces a 6 A starting request. Stop or hold when no valid request fits the safe budget.
+- [ ] **Add automated regression checks and complete live validation.** Cover the scenarios below and the existing failsafe checklist. Record the tested Home Assistant version, sensor update behavior, charger/vehicle setup, and relevant traces before declaring v3.1 stable.
+
+### Additional repository improvements
+
+- Add a clear `LICENSE` file after confirming the upstream project's licensing terms and permission to distribute this fork. The current repository has no license file; the existing License paragraph does not establish a license.
+- Keep stable import links pinned to the stable tag. Once the required fixes pass regression checks, a clearly labelled prerelease can support further testing before a stable v3.1 release.
+
+
 ---
 
 ## Highlights in v3.1
@@ -439,6 +458,20 @@ Before releasing v3.1, verify the existing dynamic-control behavior plus:
 - charging below the failsafe current is never increased by failsafe mode
 - a stopped vehicle is not started while house-power telemetry is invalid
 - normal dynamic control resumes after valid fresh house-power telemetry returns
+
+### Additional release regression scenarios
+
+- [ ] Repeated identical valid power reports do not falsely activate failsafe.
+- [ ] A frozen numeric sensor is detected using the chosen integration-specific freshness signal.
+- [ ] Invalid telemetry with changing attributes still reaches failsafe after the configured timeout.
+- [ ] A missing house-power entity blocks start/ramp-up without aborting on a template error.
+- [ ] Disconnect, charge completion, or loss of a configured gate during the stability delay prevents commands.
+- [ ] A second household load increase during ramp-down changes the target promptly.
+- [ ] Telemetry loss or a connection-gate failure during ramp-down follows the documented policy.
+- [ ] Supported W/kW and A/mA inputs produce equivalent calculations; unsupported units are rejected.
+- [ ] Stale, implausible, zero, and unavailable charger measurements use the documented fallback.
+- [ ] Invalid current-setting combinations are rejected; starting/failsafe/ramp requests respect entity limits.
+- [ ] Delayed or unchanged current feedback cannot leave a loop running indefinitely.
 
 ---
 
