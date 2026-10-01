@@ -3,57 +3,72 @@ blueprint:
   description: |
     ## Dynamic EV Charging Automation v3.1 - Tesla Fleet
 
-    Tesla Fleet-focused fork of the original Dynamic EV Charging Automation.
+    Adjusts EV charging current using the whole-house power reading and your
+    Maximum Grid Draw setting. The household total includes EV charging.
 
-    ### What's new in v3.1
-    - Direct Tesla Fleet start/stop support through `switch` entities.
-    - Independent ramp-up and ramp-down step sizes and delays.
-    - Single-phase 230 V, three-phase 230 V, and three-phase 400 V supply presets.
-    - One simple **Maximum Grid Draw** limit for the whole house.
-    - Optional local charger status, power, current, and vehicle-connected sensors.
-    - Optional target-EV charge-cable safety gate for shared chargers.
-    - Measured **W/A calibration** when both charger power and charger current are available.
-    - Ignores stale measured charger watts after charging stops or enters an idle state.
-    - Clamps EV budget so it can never exceed Maximum Grid Draw.
-    - Immediately ramps down if the post-stability fresh target drops below the current setting.
-    - Whole-house power failsafe: block ramp-up immediately on invalid data and cap active charging after a configurable timeout (default 10 A after 2 minutes).
-    - Configurable starting charging current.
-    - Ramp-up deadband only for starting a new ramp, plus fresh power checks before every increase step.
-    - Fixed one-minute idle re-evaluation with single-run control so scheduled triggers cannot interrupt an active ramp.
-    - Five-minute restart lockout by default.
-    - Optional Home Assistant Logbook debug messages.
-    - Optional location tracking; leave it empty to disable the location check.
+    ### Development version
+    v3.1 is still in development. Known reliability issues and the release checklist
+    are documented in the [repository README](https://github.com/Teeseeone/electric-vehicle-ev-dynamic-charging-home-assistant-/blob/main/README.md#v31-review-findings-and-release-requirements).
+    Clearer labels and help text do not resolve those issues.
 
-    ### CAR vs CHARGER inputs
-    Inputs are labelled so it is clear where the entity should come from:
+    ### Choose the right entities
+    - **[HOUSE]**: whole-house power meter, such as Tibber Pulse. Use watts (W).
+    - **[CAR]**: the target vehicle, normally Tesla Fleet. Used for current and start/stop commands.
+    - **[CHARGER]**: the local wall charger, such as Tesla Wall Connector. Used for local measurements and status.
+    - **[CAR/PERSON]**: optional location tracker. Leave empty to skip the location restriction.
 
-    - **[CAR]** = vehicle entity, normally Tesla Fleet.
-    - **[CHARGER]** = local wall charger entity, for example Tesla Wall Connector.
-    - **[HOUSE]** = whole-house power meter, for example Tibber Pulse.
+    ### Setup order
+    1. Choose the house power sensor and the car's charging status, start/stop control, and current control.
+    2. Set Maximum Grid Draw for the whole house and choose the electrical supply fallback.
+    3. Set minimum, starting, and maximum charging current for your vehicle and installation.
+    4. Optionally add local charger measurements and status. Use power in W and current in A.
+    5. For a shared charger, add both connection sensors. These checks reduce shared-charger risk but do not identify which vehicle is connected.
+    6. Adjust ramp timing, restart lockout, and failsafe settings. Enable debug logging while tuning.
 
-    Local CHARGER sensors are preferred for fast status and measured power/current.
-    CAR entities remain the command path for starting/stopping charging and setting current.
+    ### How the controls differ
+    - **Minimum current**: if the calculated target is lower, request charging stop.
+    - **Starting current**: the request sent before starting; capped by the calculated target and configured maximum.
+    - **Maximum current**: the upper limit used in target calculations.
+    - **Ramp-up**: increase current gradually, checking house and charger readings before every increase.
+    - **Ramp-down**: reduce current in configured steps toward the target calculated for that reduction sequence.
+    - **Deadband**: the minimum increase needed to begin a new ramp; it does not block reductions.
+    - **Stability delay**: wait, then recalculate available power before starting or increasing. This is a second check, not continuous monitoring throughout the delay.
+    - **Restart lockout**: delay restart after the start/stop switch is off or charging status is stopped/no_power.
 
-    Existing `select`-based charger controls remain supported.
+    ### Power-sensor failsafe
+    When the house-power reading is invalid or considered stale, new starts and
+    increases are blocked. Once the current timestamp-based timeout test is met,
+    an active session is capped at the failsafe current. The cap never raises a
+    lower current. Defaults: 10 A and 120 seconds. See the README for known
+    freshness/timer limitations.
+
+    ### Evaluation and logging
+    Idle checks run once per minute. One run controls an active ramp; scheduled
+    checks do not interrupt it. Debug messages appear in the Home Assistant Logbook.
+
+    Start/stop supports Tesla Fleet switches and select controls with the exact
+    options "Start charging" and "Stop charging". Tesla Fleet commands wake the
+    vehicle automatically when required.
 
   domain: automation
 
   input:
     device_tracker:
       name: "[CAR/PERSON] Location Tracker (Optional)"
-      description: "CAR/PERSON sensor. Optional location check. Leave empty to allow charging control regardless of tracker state."
+      description: >
+        Leave empty to skip location checking. If selected, the tracker must report home when a run
+        begins; other states block the run. Choose the car or a relevant person's device tracker.
       default: ""
       selector:
         entity:
           domain: device_tracker
 
     sensor_charging:
-      name: "[CAR] EV Charging State Sensor"
+      name: "[CAR] Charging Status (Fallback)"
       description: >
-        CAR sensor, normally from Tesla Fleet. Select the vehicle's charging-state sensor.
-        It is used as a fallback when the local CHARGER status sensor is not configured
-        or is unavailable. Typical Tesla states include starting, charging, stopped,
-        complete, disconnected, and no_power.
+        Choose the target vehicle's charging-status sensor, normally Tesla Fleet. A configured local
+        charger status is preferred; this car sensor is used when the local status is absent or
+        unknown/unavailable. Example states: charging, stopped, complete, disconnected, no_power.
       default: sensor.ev_charger_estado
       selector:
         entity:
@@ -62,9 +77,9 @@ blueprint:
     charger_toggle:
       name: "[CAR] Charging Start/Stop Control"
       description: >
-        CAR control, normally from Tesla Fleet. Select the vehicle's charge start/stop
-        entity. Supports select entities using "Start charging" / "Stop charging" and
-        switch entities where turn_on starts charging and turn_off stops charging.
+        Choose the target vehicle's charging control, normally the Tesla Fleet charge switch. A
+        switch starts charging when turned on and stops when turned off. A select control must
+        provide the exact options "Start charging" and "Stop charging".
       default: select.ev_charger_toggle_charging
       selector:
         entity:
@@ -73,8 +88,11 @@ blueprint:
             - switch
 
     sensor_house_power:
-      name: "[HOUSE] Whole-House Power Sensor"
-      description: "HOUSE sensor. Select total household power draw in watts. A fast-updating source such as Tibber Pulse is recommended."
+      name: "[HOUSE] Total Household Power (W)"
+      description: >
+        Choose a fast-updating sensor for the whole-house total, including EV charging. The value
+        must be in watts (W), not kilowatts (kW). Example: Tibber Pulse. This reading is compared
+        with Maximum Grid Draw.
       default: sensor.shellyemg3_8cbfea96acd8_em1_power
       selector:
         entity:
@@ -82,11 +100,11 @@ blueprint:
           device_class: power
 
     charger_power_sensor:
-      name: "[CHARGER] Actual Power Sensor (Optional)"
+      name: "[CHARGER] Measured Charging Power (W, Optional)"
       description: >
-        CHARGER sensor, normally from the local wall charger integration. Select measured
-        charger power in watts, for example Tesla Wall Connector total power / Billader.
-        Leave empty to estimate charger power from the selected electrical supply.
+        Choose the local charger's measured power in watts (W), for example Tesla Wall Connector
+        total power / Billader. Leave empty to estimate EV load from the current request. Adding
+        measured current too lets the automation calculate watts per amp from both measurements.
       default: ""
       selector:
         entity:
@@ -94,12 +112,12 @@ blueprint:
           device_class: power
 
     charger_current_sensor:
-      name: "[CHARGER] Actual Current Sensor (Optional)"
+      name: "[CHARGER] Measured Charging Current (A, Optional)"
       description: >
-        CHARGER sensor, normally from the local wall charger integration. Select measured
-        charger current in amps, for example Tesla Wall Connector Vehicle current. When
-        both CHARGER power and current are valid, measured W/A is used for target-current
-        calculations. Leave empty to use the selected electrical supply as fallback.
+        Choose the local charger's measured current in amps (A), for example Tesla Wall Connector
+        Vehicle current. This measures charging; it does not control it. Used with measured power to
+        calculate watts per amp. Leave empty to use the electrical supply fallback for that
+        calculation.
       default: ""
       selector:
         entity:
@@ -107,43 +125,44 @@ blueprint:
           device_class: current
 
     charger_status_sensor:
-      name: "[CHARGER] Local Status Sensor (Optional)"
+      name: "[CHARGER] Local Charging Status (Optional)"
       description: >
-        CHARGER sensor from the local wall charger integration. This is preferred over
-        slower CAR telemetry for charging-state decisions. For Tesla Wall Connector use
-        sensor.tesla_wall_connector_status.
+        Choose the local wall charger's status sensor, for example
+        sensor.tesla_wall_connector_status. Its reported status takes priority over the car's
+        status. Leave empty to use the car sensor; an unknown/unavailable local status also falls
+        back to the car.
       default: ""
       selector:
         entity:
           domain: sensor
 
     charger_vehicle_connected_sensor:
-      name: "[CHARGER] Vehicle Connected Sensor (Optional)"
+      name: "[CHARGER] Vehicle Connected Check (Optional)"
       description: >
-        CHARGER sensor. Confirms that some vehicle is physically connected to this wall
-        charger. For Tesla Wall Connector use
-        binary_sensor.tesla_wall_connector_vehicle_connected. If configured and not ON,
-        the automation sends no charging commands.
+        Choose the local charger's vehicle-connected binary sensor. It must report on when
+        connection checks run. Leave empty to skip this check. On a shared charger, also select the
+        target car's cable sensor; the pair does not identify which car is connected.
       default: ""
       selector:
         entity:
           domain: binary_sensor
 
     target_ev_charge_cable_sensor:
-      name: "[CAR] Target EV Charge Cable Sensor (Optional)"
+      name: "[CAR] Target Vehicle Cable Check (Optional)"
       description: >
-        CAR sensor, normally from Tesla Fleet. Select the charge-cable sensor belonging to
-        the specific EV controlled by this automation. If configured and not ON, no charging
-        commands are sent to that EV. Strongly recommended when the CHARGER may be shared
-        by multiple vehicles.
+        Choose the target vehicle's charge-cable binary sensor, normally Tesla Fleet. It must report
+        on when connection checks run. Leave empty to skip this check. Recommended alongside the
+        local vehicle-connected check for a shared charger.
       default: ""
       selector:
         entity:
           domain: binary_sensor
 
     max_grid_power:
-      name: Maximum Grid Draw (W)
-      description: Maximum total household power draw in watts. The EV charging target is adjusted to keep the whole house at or below this limit.
+      name: "Maximum Grid Draw — Whole House (W)"
+      description: >
+        Household power limit in watts (W), including EV charging. Example: 9000 means 9 kW for the
+        whole house. Sensor and command delays can allow temporary overshoot.
       default: 9000
       selector:
         number:
@@ -152,18 +171,22 @@ blueprint:
           step: 100
 
     charging_current:
-      name: "[CAR] Charging Current Control"
-      description: "CAR control, normally from Tesla Fleet. Select the vehicle number entity used to request charging current in amps."
+      name: "[CAR] Charging Current Control (A)"
+      description: >
+        Choose the target vehicle's number entity for requesting charging current, normally Tesla
+        Fleet. This control receives current commands in amps (A); it is different from the optional
+        measured-current sensor.
       default: number.ev_charger_set_charge_current
       selector:
         entity:
           domain: number
 
     supply_type:
-      name: Charging Supply
+      name: "Electrical Supply (Calculation Fallback)"
       description: >
-        Electrical supply used as the fallback watts-per-amp calculation. If valid measured
-        charger power and current sensors are configured, measured W/A takes priority.
+        Choose the supply used when measured charger power/current cannot provide watts per amp.
+        Single-phase 230 V uses 230 W/A; three-phase 230 V uses about 398 W/A; three-phase 400 V
+        uses about 693 W/A. When both measured values are positive, their ratio takes priority.
       default: single_phase_230
       selector:
         select:
@@ -176,8 +199,11 @@ blueprint:
               value: three_phase_400
 
     max_amps:
-      name: Maximum Charging Current (A)
-      description: Highest charging current the automation may request.
+      name: "Maximum Charging Current (A)"
+      description: >
+        Upper current limit used by the automation. Set it for your vehicle, charger, and
+        installation, within the selected current-control entity's supported range. Keep Minimum
+        Charging Current at or below this value.
       default: 20
       selector:
         number:
@@ -186,11 +212,10 @@ blueprint:
           step: 1
 
     min_amps:
-      name: Minimum Charging Current (A)
+      name: "Minimum Charging Current — Stop Below This (A)"
       description: >
-        Lowest charging current the automation may request. If the safe target falls below
-        this value, charging is stopped instead. Some EVs/chargers may enforce a higher
-        physical minimum than the value selected here.
+        Request charging stop when the calculated target is below this value. Choose a current your
+        EV/charger supports. Keep it at or below the maximum and at or below the starting current.
       default: 1
       selector:
         number:
@@ -199,11 +224,11 @@ blueprint:
           step: 1
 
     starting_amps:
-      name: Starting Charging Current (A)
+      name: "Starting Charging Current — Before Start (A)"
       description: >
-        Preferred current requested immediately before starting or restarting charging.
-        It is automatically clamped so it never exceeds the current safe target or
-        Maximum Charging Current.
+        Current requested immediately before start/restart. Automatically lowered when needed to
+        stay within the calculated target and configured maximum. Set it at or above Minimum
+        Charging Current; the automation does not raise it to that minimum.
       default: 6
       selector:
         number:
@@ -212,8 +237,10 @@ blueprint:
           step: 1
 
     increase_step_amps:
-      name: Ramp-Up Step Size (A)
-      description: Number of amps added per ramp-up step.
+      name: "Ramp-Up: Increase per Step (A)"
+      description: >
+        Amps added with each increase command. Example: 1 A moves a 6 A request to 7 A. The last
+        step may be smaller to reach the latest target without exceeding it.
       default: 1
       selector:
         number:
@@ -222,8 +249,11 @@ blueprint:
           step: 1
 
     increase_delay_seconds:
-      name: Ramp-Up Step Delay (seconds)
-      description: Delay between consecutive ramp-up steps.
+      name: "Ramp-Up: Wait Before Each Step (seconds)"
+      description: >
+        Wait this long before each increase, then read house power and charger measurements again.
+        Example: 1 A steps with 10 seconds here increase gradually, subject to the latest target and
+        command execution time.
       default: 10
       selector:
         number:
@@ -232,8 +262,10 @@ blueprint:
           step: 1
 
     decrease_step_amps:
-      name: Ramp-Down Step Size (A)
-      description: Number of amps removed per ramp-down step.
+      name: "Ramp-Down: Decrease per Step (A)"
+      description: >
+        Amps removed with each reduction command. Example: 2 A moves a 20 A request to 18 A. The
+        last step may be smaller to reach the target calculated for this reduction sequence.
       default: 2
       selector:
         number:
@@ -242,8 +274,11 @@ blueprint:
           step: 1
 
     decrease_delay_seconds:
-      name: Ramp-Down Step Delay (seconds)
-      description: Delay between consecutive ramp-down steps.
+      name: "Ramp-Down: Wait After Each Step (seconds)"
+      description: >
+        Wait after each reduction command, including the final one. Longer delays reduce current
+        more slowly. During this reduction sequence, the target stays fixed; household power is not
+        rechecked within that sequence.
       default: 10
       selector:
         number:
@@ -252,11 +287,11 @@ blueprint:
           step: 1
 
     ramp_up_deadband_amps:
-      name: Ramp-Up Deadband (A)
+      name: "Ramp-Up: Minimum Increase to Begin (A)"
       description: >
-        Minimum upward difference required to START a new ramp-up. Once a ramp has started,
-        the blueprint continues toward the latest safe target, including a final smaller
-        step when needed. Ramp-down is never blocked by this setting.
+        Minimum difference between target and current needed to begin a new upward ramp. Example:
+        with 1 A here, a target of 19 A can start a ramp from 18 A. Once a ramp begins, it can
+        finish with a smaller step. This setting never blocks ramp-down.
       default: 1
       selector:
         number:
@@ -265,11 +300,11 @@ blueprint:
           step: 1
 
     ramp_up_stability_seconds:
-      name: Ramp-Up Stability Time (seconds)
+      name: "Start/Ramp-Up: Stability Delay (seconds)"
       description: >
-        Before ramp-up begins, wait this long and recalculate using a fresh whole-house
-        power value. During ramp-up, the blueprint then re-reads house power and charger
-        measurements before every increase step.
+        Wait before starting/restarting or beginning an upward ramp, then check available power
+        again. Example: 30 seconds performs a second check after that wait. The code does not
+        require every reading during the wait to remain stable.
       default: 30
       selector:
         number:
@@ -278,10 +313,11 @@ blueprint:
           step: 5
 
     restart_delay_seconds:
-      name: Restart Lockout After Stop (seconds)
+      name: "Restart: Lockout After Stop (seconds)"
       description: >
-        Minimum delay before charging may restart after a stop/off state. This reduces
-        repeated start/stop cycling. Default is 300 seconds (5 minutes).
+        Delay restart when the charge switch is off or charging status is stopped/no_power. Measured
+        from the relevant entity's last state change. Default: 300 seconds (5 minutes). Other
+        eligible idle states may skip this lockout.
       default: 300
       selector:
         number:
@@ -290,12 +326,11 @@ blueprint:
           step: 30
 
     failsafe_current_amps:
-      name: Whole-House Power Failsafe Current (A)
+      name: "Power Failsafe: Current Cap (A)"
       description: >
-        Maximum charging current to keep when the whole-house power sensor has been
-        unavailable, unknown, non-numeric, or stale for the configured failsafe timeout.
-        The blueprint never increases current to this value; it only caps an already-active
-        charging session. Default is 10 A.
+        Current cap for an already-active session when the house-power timeout is reached. Never
+        raises a lower current or starts a stopped vehicle. Also capped at Maximum Charging Current.
+        Default: 10 A. Choose a value your vehicle supports.
       default: 10
       selector:
         number:
@@ -304,12 +339,11 @@ blueprint:
           step: 1
 
     failsafe_timeout_seconds:
-      name: Whole-House Power Failsafe Timeout (seconds)
+      name: "Power Failsafe: Timeout / Freshness Limit (seconds)"
       description: >
-        How long the whole-house power sensor may remain invalid or stale before the
-        failsafe current cap is applied. While the sensor is invalid but still inside this
-        timeout, charging is held at its current setting and ramp-up/start is blocked.
-        Default is 120 seconds (2 minutes).
+        House-reading age limit and timeout before the failsafe cap applies. Invalid readings block
+        starts and increases immediately. Default: 120 seconds (2 minutes). The current version
+        measures age from the last value/attribute change; see the README for known limitations.
       default: 120
       selector:
         number:
@@ -318,10 +352,11 @@ blueprint:
           step: 30
 
     debug_logging:
-      name: Debug Logging
+      name: "Debug Logging — Home Assistant Logbook"
       description: >
-        Write charging decisions and calculation details to the Home Assistant Logbook.
-        Recommended while testing or tuning the blueprint.
+        Enable while testing or tuning. Logbook messages show house load, grid headroom, EV power
+        budget, measured/estimated inputs, target current, and hold/start/stop/ramp/failsafe
+        decisions. Disable when you no longer need these detailed messages.
       default: false
       selector:
         boolean:
@@ -517,8 +552,9 @@ action:
         - waiting
         - waiting_for_authorization
 
-  # Shared-charger safety gates: do not send commands unless the local charger and
-  # target EV connection checks pass when those optional sensors are configured.
+  # 1. Check configured connection gates at the beginning of this run.
+  # Ramp-up repeats these checks; restart delays and ramp-down have limitations
+  # documented in the README.
   - choose:
       - conditions:
           - condition: template
@@ -556,7 +592,7 @@ action:
                         No charging commands were sent to the target EV.
           - stop: Target EV charge cable is not connected
 
-  # Do not interfere when charging is complete, disconnected, unavailable, or in an unsupported state.
+  # 2. Continue only when the selected local/car status is eligible for control.
   - choose:
       - conditions:
           - condition: template
@@ -575,7 +611,7 @@ action:
                         HOLD: charging state '{{ charging_state }}' is not eligible for dynamic control.
           - stop: Charging state is not eligible for dynamic control
 
-  # Whole-house power failsafe. Never treat invalid telemetry as 0 W.
+  # 3. Check house-power validity and the current timestamp-based freshness test.
   # During the timeout, hold the current setting and block all ramp-up/start actions.
   # After the timeout, cap an already-active charging session to the configured failsafe current.
   - choose:
@@ -637,7 +673,7 @@ action:
                             applies after {{ failsafe_timeout_seconds | round(0) }} s.
               - stop: Whole-house power data is temporarily invalid
 
-  # Stop charging when available power is below the configured minimum.
+  # 4. Request stop when the calculated EV budget cannot support the minimum.
   - choose:
       - conditions:
           - condition: template
@@ -677,8 +713,8 @@ action:
                         target=0 A, state={{ charging_state }}.
           - stop: Not enough power to charge above the minimum current
 
-  # Startable idle states enter the restart/start sequence.
-  # The 5-minute lockout applies specifically to stopped/no_power.
+  # 5. For eligible idle states, check lockout, wait, recheck power, and request start.
+  # Lockout applies to an off switch or stopped/no_power status.
   - choose:
       - conditions:
           - condition: template
@@ -706,7 +742,8 @@ action:
                                 restart lockout={{ restart_delay_seconds | int }} s.
                   - stop: Restart lockout is still active
 
-          # Require stable spare power and recalculate from fresh sensor values before restarting.
+          # Wait, then perform a second power check before restarting.
+          # This delay does not continuously monitor stability.
           - delay:
               seconds: "{{ ramp_up_stability_seconds | int }}"
 
@@ -1100,7 +1137,8 @@ action:
 
           - stop: Restart sequence completed
 
-  # Active charging: reduce immediately when the calculated target is lower.
+  # 6. For an active session, reduce toward this run's initial calculated target.
+  # This loop does not refresh house-power readings; see the README review.
   - choose:
       - conditions:
           - condition: template
@@ -1143,7 +1181,7 @@ action:
                         target={{ new_target_value | round(0) }} A.
           - stop: Ramp-down completed
 
-  # Ignore small upward changes inside the configured deadband.
+  # 7. Hold if no increase is needed or the increase is below the ramp-start threshold.
   - choose:
       - conditions:
           - condition: template
@@ -1167,7 +1205,7 @@ action:
                         the {{ ramp_up_deadband_amps | round(0) }} A ramp-start deadband.
           - stop: Target is within ramp-up deadband
 
-  # Before ramping up, wait and re-read live house power.
+  # 8. Before increasing an active session, wait and recheck available power.
   - delay:
       seconds: "{{ ramp_up_stability_seconds | int }}"
 
